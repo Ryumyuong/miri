@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// ── 미리크루즈 Firestore 규칙 ────────────────────────────────────────
+// 관리자 인증이 Firebase Auth 가 아니라 localStorage 데모 방식이므로
+// (request.auth 가 항상 null) 현재는 공개 모드로 둡니다.
+// ⚠️ 운영 전환 시: Firebase Auth 도입 후 컬렉션별 write 조건을 강화하세요.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

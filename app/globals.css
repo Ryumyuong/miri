@@ -1,26 +1,134 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@latest/dist/web/variable/pretendardvariable.css");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&display=swap");
 @import "tailwindcss";
 
+/* ── 반응형 경계는 이 3개가 전부 ──────────────────────────────
+   PC 991px 이상 / 모바일 990px 이하 / 접은 모바일 500px 이하
+
+   주의: Tailwind v4의 max-[Npx]는 "N 이하"가 아니라 "N 미만"이다
+   (@media not (min-width: Npx)로 컴파일됨). 그래서 클래스에는 +1 한 값을 쓴다:
+     max-[991px]:  → 990px 이하   (아래 @media max-width:990px 와 일치)
+     max-[501px]:  → 500px 이하
+     min-[991px]:  → 991px 이상
+   클래스에 max-[990px]를 쓰면 990px에서만 PC 스타일이 남아 1px 어긋난다. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eef1f6;
+  --foreground: #1e293b;
+
+  /* 미리크루즈 브랜드 컬러 */
+  --brand-navy: #113667;
+  --brand-navy-dark: #1a2f4d;
+  --brand-blue: #1d4ed8;
+  --brand-gold: #c9a24b;
+
+  /* 히어로 배경 실사진 */
+  --hero-photo: url("/hero.png");
+
+  /* 사이트 전체 크기 기준 — vw(뷰포트 비례), 1920px에서 상한.
+     레이아웃도 1920에서 멈추므로 폰트도 같은 지점(0.77vw @1920 = 14.784px)에서 캡.
+     하한 8.2px (991~1065px 구간 가독성). 남은 em 요소가 이 값을 따른다.
+     ※ 변환된 vw 폰트 859곳은 각자 min(Xvw, X×19.2px)로 별도 캡됨. */
+  --font-base: clamp(8.2px, 0.77vw, 14.784px);
+}
+
+/* 모바일도 vw — 기준폭에서 기존 px 값이 그대로 나오도록 환산.
+   펼친 모바일: 600px 기준 14.39px → 14.39/600×100 = 2.3983vw
+   접은 모바일: 412px 기준 12px    →    12/412×100 = 2.9126vw */
+@media (max-width: 990px) {
+  :root {
+    /* 501~990px: 600px 값(14.39px)에서 상한 — 그 이상 커지지 않음 */
+    --font-base: min(2.3983vw, 14.39px);
+  }
+}
+@media (max-width: 500px) {
+  :root {
+    --font-base: 2.9126vw;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-navy: var(--brand-navy);
+  --color-navy-dark: var(--brand-navy-dark);
+  --color-brand: var(--brand-blue);
+  --color-gold: var(--brand-gold);
+  --font-sans: "Pretendard Variable", Pretendard, system-ui, "Malgun Gothic", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 전체 폰트(및 rem 기준) 확대 — 자체 fontSize 를 지정한 홈 섹션(em 기준)은 영향 없음 */
+html {
+  font-size: 20px;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Pretendard Variable", Pretendard, system-ui, "Malgun Gothic", sans-serif;
+}
+
+/* 버튼·클릭 요소 커서 (Tailwind v4 preflight는 기본 default 커서) */
+button:not(:disabled),
+[role="button"],
+label[for],
+summary {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* 인쇄: 포털로 body 직속에 붙은 인쇄 시트(.print-portal)만 자연 흐름으로 출력.
+   fixed 오버레이가 페이지마다 반복되던 문제 방지 + 본문 글자크기 통일. */
+@media print {
+  /* 브라우저 기본 머리글/바닥글(URL·날짜·페이지번호) 제거 — 여백 0이면 표시 자리가 없어짐 */
+  @page {
+    margin: 0;
+  }
+  /* 앱 전체 숨김 (인쇄 시트 포털만 남김) */
+  body > *:not(.print-portal) {
+    display: none !important;
+  }
+  /* 오버레이(고정)·모달 박스 → 자연 흐름/전체 높이로 해제 */
+  .print-portal {
+    position: static !important;
+    display: block !important;
+    inset: auto !important;
+    z-index: auto !important;
+    background: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .print-portal > div {
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    display: block !important;
+  }
+  #print-area {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    /* @page 여백 0을 보완하는 인쇄 마진 */
+    padding: 12mm 10mm !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* 인쇄 시트: vw 기반 컴포넌트(일정표·취소규정)의 글자 크기를 본문(13px)으로 통일.
+   @media print 밖에 둬서 모달 미리보기 화면과 실제 인쇄 모두 동일하게 적용된다. */
+.print-compact,
+.print-compact * {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
 }

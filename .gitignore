@@ -29,6 +29,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
+err.out
+log.out
+
+# build artifacts / accidental files
+*.tar.gz
+/miri@0.1.0
+/next
+Info*
 
 # env files (can opt-in for committing if needed)
 .env*

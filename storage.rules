@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// ── 미리크루즈 Storage 규칙 ──────────────────────────────────────────
+// 현재 관리자 인증은 Firebase Auth 가 아니라 클라이언트 localStorage 데모
+// 방식이므로(LoginForm: admin/1234 → localStorage), request.auth 는 항상
+// null 입니다. 따라서 auth 기반 규칙은 사용할 수 없고, Firestore 와 동일하게
+// 공개 모드로 두되 이미지 타입·용량 제한만 두어 남용을 완화합니다.
+//
+// ⚠️ 운영 전환 시: Firebase Auth(또는 Admin SDK 서버 업로드)를 도입한 뒤
+//    write 조건을 `request.auth != null` 등으로 강화하세요.
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 운항 일정 대표 이미지(voyages/), 항구·관광정보 이미지(ports/), 영상(videos/) 등
+    match /{folder}/{file} {
+      allow read: if true;
+      allow write: if request.resource == null                          // 삭제 허용
+                   || (request.resource.contentType.matches('image/.*')  // 이미지: 100MB 이하
+                       && request.resource.size < 100 * 1024 * 1024)
+                   || (request.resource.contentType.matches('video/.*')  // 영상: 500MB 이하
+                       && request.resource.size < 500 * 1024 * 1024);
+    }
+  }
+}
