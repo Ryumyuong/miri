@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import Link from "next/link";
 import type { Voyage, VoyageStatus } from "@/lib/types";
-import { REGION_OPTS, matchesRegion } from "@/lib/region-filter";
+import { REGION_OPTS, FILTER_REGION_OPTS, matchesRegion } from "@/lib/region-filter";
 import { DEFAULT_INCLUDED, DEFAULT_EXCLUDED } from "@/lib/voyage-defaults";
 import { useVoyages } from "@/lib/useVoyages";
 import {
@@ -16,6 +16,7 @@ import {
   computeStatus,
   type VoyageInput,
 } from "@/lib/voyages";
+import { SHOW_VIDEO_SECTION } from "@/lib/features";
 import { useReservations } from "@/lib/useReservations";
 import { useShips } from "@/lib/useShips";
 import { aggregateForVoyage } from "@/lib/reservations";
@@ -53,7 +54,11 @@ export default function VoyageManager() {
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
   const [region, setRegion] = useState<string | null>(null); // 권역 필터 (null=전체, /cruises와 동일 세부 권역)
-  const filtered = sortedVoyages.filter((v) => matchesRegion(v, region));
+  const [month, setMonth] = useState<string | null>(null); // 출항월 필터 (null=전체, "YYYY-MM")
+  const regionFiltered = sortedVoyages.filter((v) => matchesRegion(v, region));
+  // 선택한 권역 안에 실제로 존재하는 출항월만 노출
+  const monthOpts = [...new Set(regionFiltered.map((v) => v.departDate.slice(0, 7)).filter(Boolean))].sort();
+  const filtered = regionFiltered.filter((v) => !month || v.departDate.slice(0, 7) === month);
 
   // 승객 이름 검색 — 모든 예약의 승객 명단에서 이름으로 찾아 해당 운항일정을 바로 표시
   const [search, setSearch] = useState("");
@@ -204,18 +209,40 @@ export default function VoyageManager() {
       {/* 권역 필터 (/cruises와 동일 세부 권역) */}
       {!q && !loading && voyages.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-1.5">
-          {REGION_OPTS.map((opt) => {
+          {FILTER_REGION_OPTS.map((opt) => {
             const count = sortedVoyages.filter((v) => matchesRegion(v, opt.value)).length;
             const active = region === opt.value;
             return (
               <button
                 key={opt.label}
-                onClick={() => { setRegion(opt.value); setPage(1); }}
+                onClick={() => { setRegion(opt.value); setMonth(null); setPage(1); }}
                 className={`rounded-lg px-3 py-1.5 text-[min(0.9075vw,17.424px)] max-[991px]:text-[min(2.8266vw,16.9596px)] max-[501px]:text-[3.4328vw] font-semibold transition ${
                   active ? "bg-navy text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
                 {opt.label} <span className="opacity-70">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 출항월 필터 (선택한 권역 기준) */}
+      {!q && !loading && monthOpts.length > 0 && (
+        <div className="mb-5 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-slate-400">출항월</span>
+          {[null, ...monthOpts].map((m) => {
+            const count = m ? regionFiltered.filter((v) => v.departDate.slice(0, 7) === m).length : regionFiltered.length;
+            const active = month === m;
+            return (
+              <button
+                key={m ?? "all"}
+                onClick={() => { setMonth(m); setPage(1); }}
+                className={`rounded-lg border px-2.5 py-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold transition ${
+                  active ? "border-brand bg-brand/10 text-brand" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {m ? `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월` : "전체"} <span className="opacity-70">{count}</span>
               </button>
             );
           })}
@@ -230,7 +257,8 @@ export default function VoyageManager() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white py-16 text-center text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-400">
-          <b>{REGION_OPTS.find((o) => o.value === region)?.label ?? "선택한"}</b> 권역 일정이 없습니다.
+          <b>{FILTER_REGION_OPTS.find((o) => o.value === region)?.label ?? "선택한"}</b> 권역
+          {month && <> · <b>{month.slice(0, 4)}년 {Number(month.slice(5, 7))}월</b> 출항</>} 일정이 없습니다.
         </div>
       ) : (
         <div className="flex flex-col gap-4">
@@ -361,6 +389,7 @@ function VoyageForm({
           countries: initial.countries ?? [],
           itinerary: initial.itinerary ?? [],
           thumbnail: initial.thumbnail,
+          productImages: initial.productImages ?? [],
           flight: initial.flight,
           description: initial.description,
           features: initial.features ?? [],
@@ -633,13 +662,26 @@ function VoyageForm({
           <Field label="기항지 (쉼표로 구분)" full>
             <input className={inp} value={itineraryRaw} onChange={(e) => setItineraryRaw(e.target.value)} placeholder="로마, 제노아, 마르세유 …" />
           </Field>
-          <Field label="대표 이미지" full>
+          <Field label="대표 이미지 (1장 · 일정 목록 카드와 상세페이지 상단에 노출)" full>
             <ImageUploader
               value={f.thumbnail}
               onChange={(v) => set("thumbnail", v)}
               dir="voyages"
               label="대표 이미지를 끌어다 놓거나 클릭하여 업로드"
             />
+          </Field>
+          <Field label="상품 이미지 (여러 장 · 상세 '상품정보' 탭 갤러리)" full>
+            <ImageUploader
+              multiple
+              value={f.productImages ?? []}
+              onChange={(v) => set("productImages", v)}
+              dir="voyages"
+              label="이미지를 끌어다 놓거나 클릭하여 업로드 (여러 장 가능)"
+            />
+            <p className="mt-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
+              선박 카드({f.shipName || "선박"})에 이미지가 등록돼 있으면 그쪽이 우선입니다 — 첫 장이 상품정보 맨 위 큰 사진, 나머지가 갤러리로 나갑니다.
+              이 상품만 다른 사진을 쓰려면 선박 카드의 이미지를 비워주세요.
+            </p>
           </Field>
 
 
@@ -703,6 +745,9 @@ function VoyageForm({
             />
           </Field>
 
+          {/* ⑤ 영상 — 영상 확보 전까지 숨김 (lib/features.ts SHOW_VIDEO_SECTION) */}
+          {SHOW_VIDEO_SECTION && (
+            <>
           <p className="col-span-2 mt-3 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-bold text-[#1E4D8B]">⑤ 영상으로 만나는 크루즈</p>
           <Field label="영상 (YouTube URL 또는 영상 파일 업로드)" full>
             {(f.videos ?? []).map((vid, i) => (
@@ -744,6 +789,8 @@ function VoyageForm({
               label="영상 파일을 끌어다 놓거나 클릭하여 업로드"
             />
           </Field>
+            </>
+          )}
 
           <p className="col-span-2 mt-3 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-bold text-slate-500">기타 설정</p>
           <Field label="프라임 상품" full>

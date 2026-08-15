@@ -2,6 +2,7 @@
 
 import { useVoyages } from "@/lib/useVoyages";
 import { groupVoyages, groupKey, publishedVoyages } from "@/lib/voyage-group";
+import { matchesRegion } from "@/lib/region-filter";
 import PrimeCruises from "./PrimeCruises";
 
 /** 프라임 전용 일정 — 유럽·미주알래스카·중동을 우선 노출, 없으면 앞 3건. */
@@ -24,7 +25,7 @@ export default function PrimeCruisesLive() {
     .map((g) => g.rep);
   // 지정된 프라임이 없으면 지역 자동 선정으로 대체 (전환기 안전장치)
   const fallback = ["유럽", "미주·알래스카", "중동"]
-    .map((r) => upcoming.find((v) => v.region === r))
+    .map((r) => upcoming.find((v) => matchesRegion(v, r)))
     .filter((v): v is NonNullable<typeof v> => Boolean(v));
   const list = primes.length ? primes : (fallback.length ? fallback : upcoming.slice(0, 3));
   return <PrimeCruises voyages={list} />;

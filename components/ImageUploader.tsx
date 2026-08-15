@@ -6,8 +6,11 @@ import { uploadImage } from "@/lib/upload";
 /** 업로드 규격 (storage.rules 와 일치) */
 const MAX_IMAGE_MB = 100;
 const MAX_VIDEO_MB = 500;
-export const UPLOAD_SPEC = `JPG · PNG · WEBP · GIF / 파일당 최대 ${MAX_IMAGE_MB}MB · 개수 제한 없음`;
-const VIDEO_SPEC = `MP4 · MOV · WEBM · MKV / 파일당 최대 ${MAX_VIDEO_MB}MB · 개수 제한 없음`;
+// 개수 안내는 업로더 모드에 따라 달라진다 — 단일 업로더에 "개수 제한 없음"이 뜨면 안 됨
+const countSpec = (multiple?: boolean, video?: boolean) =>
+  multiple ? "개수 제한 없음" : `1${video ? "개" : "장"}만 등록 (새로 올리면 교체됩니다)`;
+export const UPLOAD_SPEC = `JPG · PNG · WEBP · GIF / 파일당 최대 ${MAX_IMAGE_MB}MB`;
+const VIDEO_SPEC = `MP4 · MOV · WEBM · MKV / 파일당 최대 ${MAX_VIDEO_MB}MB`;
 
 type SingleProps = {
   multiple?: false;
@@ -24,10 +27,21 @@ type Props = (SingleProps | MultiProps) & {
   label?: string; // 안내 라벨(드롭존 안 문구)
   className?: string;
   video?: boolean; // true면 영상 파일 업로드 모드
+  /** 드롭존 안내문 글자 크기 — 관리자 모달처럼 고정 px 스케일을 쓰는 곳에서 넘긴다.
+   *  미지정 시 사이트 기본(vw) 크기. */
+  textClass?: string;
 };
 
+const DEFAULT_TEXT =
+  "text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw]";
+
 export default function ImageUploader(props: Props) {
-  const { dir = "uploads", label = "이미지를 끌어다 놓거나 클릭하여 업로드", className = "" } = props;
+  const {
+    dir = "uploads",
+    label = "이미지를 끌어다 놓거나 클릭하여 업로드",
+    className = "",
+    textClass = DEFAULT_TEXT,
+  } = props;
   const items = props.multiple ? props.value ?? [] : props.value ? [props.value] : [];
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -124,15 +138,17 @@ export default function ImageUploader(props: Props) {
           setDragOver(false);
           handleFiles(e.dataTransfer.files);
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-5 text-center transition ${
+        className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-5 text-center transition ${textClass} ${
           dragOver ? "border-brand bg-blue-50" : "border-slate-300 hover:border-slate-400 hover:bg-slate-50"
         }`}
       >
-        <span className="text-[min(1.375vw,26.4px)] max-[991px]:text-[min(4.2826vw,25.6956px)] max-[501px]:text-[5.201vw]">{uploading ? "⏳" : "⬆"}</span>
-        <p className="text-[min(1.35vw,25.92px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.1vw] font-semibold text-slate-600">
+        <span className="text-[1.35em]">{uploading ? "⏳" : "⬆"}</span>
+        <p className="font-semibold text-slate-600">
           {uploading ? "업로드 중…" : props.multiple ? `${label}${items.length ? " (추가)" : ""}` : items.length ? "이미지 변경 — 끌어다 놓거나 클릭" : label}
         </p>
-        <p className="text-[min(1.15vw,22.08px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">{props.video ? VIDEO_SPEC : UPLOAD_SPEC}</p>
+        <p className="text-[0.86em] text-slate-400">
+          {props.video ? VIDEO_SPEC : UPLOAD_SPEC} · {countSpec(props.multiple, props.video)}
+        </p>
         <input
           ref={inputRef}
           type="file"

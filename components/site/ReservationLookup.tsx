@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useReservations } from "@/lib/useReservations";
+import { useConsults } from "@/lib/useConsults";
 
 const digits = (s: string) => s.replace(/[^0-9]/g, "");
 
@@ -20,6 +21,7 @@ export default function ReservationLookup() {
   const [open, setOpen] = useState(false); // 결과 팝업
 
   const { reservations } = useReservations();
+  const { consults } = useConsults();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +45,12 @@ export default function ReservationLookup() {
 
   const myReservations = open ? reservations.filter(matchReservation) : [];
 
+  // 상담문의: 이름·연락처가 모두 일치하는 건 (관리자 답변을 함께 표시)
+  const myConsults = open
+    ? consults.filter((c) => norm(c.customerName) === nq && digits(c.phone) === pq)
+    : [];
+  const nothingFound = myReservations.length === 0 && myConsults.length === 0;
+
   return (
     <div className="w-full" style={{ fontSize: "var(--font-base)" }}>
       <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-10 shadow-sm max-[501px]:p-6">
@@ -60,8 +68,11 @@ export default function ReservationLookup() {
             <circle cx="11" cy="11" r="7" />
             <path d="M21 21l-4.3-4.3" />
           </svg>
-          예약 조회하기
+          예약 · 문의 조회하기
         </button>
+        <p className="mt-3 text-center text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
+          상담문의 시 입력하신 이름·연락처로 조회하면 답변 내용도 함께 확인할 수 있습니다.
+        </p>
       </form>
 
       {/* 결과 팝업 */}
@@ -69,13 +80,13 @@ export default function ReservationLookup() {
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={() => setOpen(false)}>
           <div className="w-full max-w-[52em] overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <h3 className="text-[min(1.1vw,21.12px)] max-[991px]:text-[min(3.4262vw,20.5572px)] max-[501px]:text-[4.1609vw] font-bold text-navy">예약 조회 결과</h3>
+              <h3 className="text-[min(1.1vw,21.12px)] max-[991px]:text-[min(3.4262vw,20.5572px)] max-[501px]:text-[4.1609vw] font-bold text-navy">조회 결과 <span className="font-medium text-slate-400">예약 · 상담문의</span></h3>
               <button onClick={() => setOpen(false)} aria-label="닫기" className="text-[min(1.232vw,23.6544px)] max-[991px]:text-[min(3.8373vw,23.0238px)] max-[501px]:text-[4.6602vw] leading-none text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
-              {myReservations.length === 0 ? (
+              {nothingFound ? (
                 <p className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-400">
-                  일치하는 예약(가예약) 내역이 없습니다.
+                  일치하는 예약(가예약) 또는 상담문의 내역이 없습니다.
                   <br />
                   <span className="text-[0.9em]">이름·연락처 또는 예약번호를 다시 확인해 주세요.</span>
                 </p>
@@ -96,6 +107,45 @@ export default function ReservationLookup() {
                       </dl>
                     </div>
                   ))}
+
+                  {/* 상담문의 & 관리자 답변 */}
+                  {myConsults.length > 0 && (
+                    <>
+                      <p className="mt-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-bold text-navy">
+                        상담문의 내역 <span className="font-medium text-slate-400">{myConsults.length}건</span>
+                      </p>
+                      {myConsults.map((c) => (
+                        <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-brand">
+                              {c.reply ? "답변 완료" : c.status === "신규" ? "접수 완료 — 답변 준비 중" : c.status}
+                            </p>
+                            {c.createdAt && (
+                              <span className="text-[min(0.77vw,14.784px)] max-[991px]:text-[min(2.3983vw,14.3898px)] max-[501px]:text-[2.9126vw] text-slate-400">{c.createdAt} 접수</span>
+                            )}
+                          </div>
+                          <p className="mt-2 whitespace-pre-line text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-600">
+                            {c.topic}
+                          </p>
+                          {c.reply ? (
+                            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-4">
+                              <p className="text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-bold text-navy">
+                                미리크루즈 답변
+                                {c.repliedAt && <span className="ml-2 font-medium text-slate-400">{c.repliedAt}</span>}
+                              </p>
+                              <p className="mt-1.5 whitespace-pre-line text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-700">
+                                {c.reply}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="mt-3 rounded-lg border border-dashed border-slate-200 px-4 py-3 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
+                              담당자가 확인 후 답변을 등록하면 문자로 안내해 드립니다.
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>

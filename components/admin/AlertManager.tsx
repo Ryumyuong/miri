@@ -3,8 +3,11 @@
 import { useState } from "react";
 import type { AlertItem, AlertLevel } from "@/lib/types";
 import { useAlerts } from "@/lib/useAlerts";
+import Link from "next/link";
 import { useReservations } from "@/lib/useReservations";
+import { useConsults } from "@/lib/useConsults";
 import { computePassportAlerts } from "@/lib/reservations";
+import { computeConsultAlerts } from "@/lib/consults";
 import { addAlert, updateAlert, deleteAlert, seedAlerts, type AlertInput } from "@/lib/alerts";
 import Pagination from "@/components/admin/Pagination";
 
@@ -24,6 +27,8 @@ export default function AlertManager() {
   const { alerts, loading } = useAlerts();
   const { reservations } = useReservations();
   const passportAlerts = computePassportAlerts(reservations);
+  const { consults } = useConsults();
+  const consultAlerts = computeConsultAlerts(consults);
   const [editing, setEditing] = useState<AlertItem | null | undefined>(undefined);
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
@@ -50,6 +55,34 @@ export default function AlertManager() {
           )}
           <button onClick={() => setEditing(null)} className="rounded-lg bg-navy px-4 py-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold text-white hover:bg-navy-dark">+ 알림 추가</button>
         </div>
+      </div>
+
+      {/* 새 상담문의 자동 알림 (상담 접수 즉시 표시, 답변 처리하면 사라짐) */}
+      <div className="mb-6">
+        <p className="mb-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-bold text-slate-600">
+          새 상담문의 <span className="text-[1.0714em] font-medium text-slate-400">자동 · {consultAlerts.length}건</span>
+        </p>
+        {consultAlerts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
+            답변 대기 중인 상담문의가 없습니다. (홈페이지 상담 신청이 접수되면 자동 표시)
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {consultAlerts.map((a) => (
+              <Link
+                key={a.id}
+                href={a.href ?? "/admin/consults"}
+                className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition hover:brightness-95 ${levelStyle[a.level]}`}
+              >
+                <div>
+                  <span className="inline-block rounded bg-white/70 px-1.5 py-0.5 text-[min(0.605vw,11.616px)] max-[991px]:text-[min(1.8843vw,11.3058px)] max-[501px]:text-[2.2884vw] font-bold text-slate-700">{a.tag}</span>
+                  <p className="mt-1 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.1vw] text-slate-600">{a.message}</p>
+                </div>
+                <span className="shrink-0 rounded-md bg-white/70 px-2 py-1 text-[min(0.605vw,11.616px)] max-[991px]:text-[min(1.8843vw,11.3058px)] max-[501px]:text-[2.2884vw] font-semibold text-slate-400">답변하기 →</span>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 여권 상태 자동 알림 (신청 데이터 기반, 읽기 전용) */}

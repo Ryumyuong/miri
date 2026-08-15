@@ -33,17 +33,8 @@ export default function VideoGallery({ videos }: { videos?: Video[] }) {
   const [i, setI] = useState(0);
   const [playing, setPlaying] = useState(false);
 
-  // 영상이 없어도 섹션 틀(제목)은 표시하되, 영상 모양 대신 텍스트 안내
-  if (!videos || videos.length === 0) {
-    return (
-      <section style={{ fontSize: "var(--font-base)" }}>
-        <h2 className="mb-6 text-[min(1.65vw,31.68px)] max-[991px]:text-[min(5.1393vw,30.8358px)] max-[501px]:text-[6.2414vw] font-black text-navy">영상으로 만나는 크루즈</h2>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 py-16 text-center text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-400">
-          등록된 영상이 없습니다.
-        </div>
-      </section>
-    );
-  }
+  // 등록된 영상이 없으면 섹션(제목 포함) 전체를 노출하지 않는다 — 빈 안내 박스도 띄우지 않음
+  if (!videos || videos.length === 0) return null;
 
   const n = videos.length;
   const s = videos[Math.min(i, n - 1)];

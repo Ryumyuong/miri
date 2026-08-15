@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Voyage } from "@/lib/types";
 import { groupVoyages } from "@/lib/voyage-group";
-import { REGION_OPTS, matchesRegion } from "@/lib/region-filter";
+import { FILTER_REGION_OPTS, matchesRegion, normalizeFilterRegion } from "@/lib/region-filter";
 
 function won(n: number) {
   return "₩" + n.toLocaleString("ko-KR");
@@ -38,7 +38,8 @@ const LINE_OPTS = [
 
 export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
   const params = useSearchParams();
-  const [region, setRegion] = useState<string | null>(params.get("region"));
+  // 동남아·동북아로 들어와도 "동남아/동북아" 칩이 선택된 상태가 되도록 정규화
+  const [region, setRegion] = useState<string | null>(normalizeFilterRegion(params.get("region")));
   // 검색바·크루즈찾기에서 넘어온 from(YYYY-MM-DD)은 출발월 필터로 초기화 → UI(출발월 칩)로 변경 가능
   const [month, setMonth] = useState<string | null>(params.get("from") ? params.get("from")!.slice(0, 7) : null); // "YYYY-MM"
   const [line, setLine] = useState("전체");
@@ -48,7 +49,7 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
   const regionParam = params.get("region");
   const fromParam = params.get("from");
   useEffect(() => {
-    setRegion(regionParam);
+    setRegion(normalizeFilterRegion(regionParam));
     setMonth(fromParam ? fromParam.slice(0, 7) : null);
   }, [regionParam, fromParam]);
 
@@ -111,7 +112,7 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
         <div className={filterOpen ? "" : "max-[991px]:hidden"}>
         <FilterGroup title="지역">
           <div className="flex flex-wrap gap-1.5">
-            {REGION_OPTS.map((o) => (
+            {FILTER_REGION_OPTS.map((o) => (
               <Chip
                 key={o.label}
                 active={region === o.value}

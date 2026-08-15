@@ -38,6 +38,7 @@ export default function ReviewForm({
   const [images, setImages] = useState<string[]>(initial?.images ?? []);
   const [consentPrivacy, setConsentPrivacy] = useState<boolean | null>(initial ? true : null);
   const [consentPromo, setConsentPromo] = useState<boolean | null>(initial?.consentPromo ?? null);
+  const [consentPolicy, setConsentPolicy] = useState<boolean | null>(initial ? true : null);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -50,6 +51,10 @@ export default function ReviewForm({
     }
     if (consentPrivacy !== true) {
       alert("개인정보 수집·이용에 동의하셔야 후기를 등록할 수 있습니다.");
+      return;
+    }
+    if (consentPolicy !== true) {
+      alert("후기 게시 및 운영정책에 동의하셔야 후기를 등록할 수 있습니다.");
       return;
     }
     setSaving(true);
@@ -71,6 +76,7 @@ export default function ReviewForm({
         voyageId: voyageId || undefined,
         consentPrivacy: true,
         consentPromo: consentPromo === true,
+        consentPolicy: true,
       };
       if (initial) {
         await updateReview(initial.id, payload);
@@ -163,9 +169,32 @@ export default function ReviewForm({
           <p className="mt-3 font-medium text-slate-600">본인은 위 내용을 충분히 이해했으며, 미리크루즈상품 여행후기를 홍보매체에 활용하는 것에 동의합니다.</p>
         </div>
 
+        {/* 후기 게시 및 운영정책 */}
+        <SectionTitle className="mt-6">후기 게시 및 운영정책 동의</SectionTitle>
+        <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] leading-relaxed text-slate-500">
+          <p>작성하신 후기는 서비스 품질 향상 및 이용자 정보 제공을 위해 홈페이지에 게시될 수 있습니다.</p>
+          <p className="mt-3">
+            회사는 건전한 후기 운영과 다른 이용자의 권리 보호를 위해 다음 각 호에 해당하는 게시물에 대하여 사전 통보 없이 비공개 처리, 게시 중단 또는 삭제할 수 있습니다.
+          </p>
+          <ul className="mt-2 list-decimal space-y-1 pl-6">
+            <li>욕설, 비방, 모욕, 명예훼손 등 타인의 권리를 침해할 우려가 있는 내용</li>
+            <li>사실관계가 확인되지 않은 내용 또는 허위·과장된 정보</li>
+            <li>개인정보, 연락처 등 타인의 개인정보가 포함된 내용</li>
+            <li>광고, 홍보, 스팸 또는 후기의 목적과 관계없는 내용</li>
+            <li>동일하거나 유사한 내용을 반복적으로 게시한 경우</li>
+            <li>관련 법령을 위반하거나 사회질서 및 미풍양속을 해칠 우려가 있는 내용</li>
+            <li>기타 회사가 정한 게시물 운영기준에 부합하지 않는 내용</li>
+          </ul>
+          <p className="mt-3">
+            단, 단순히 회사 또는 서비스에 대한 부정적인 의견이나 불만을 포함하고 있다는 이유만으로 삭제하지 않으며, 회사는 객관적인 게시물 운영기준에 따라 게시 여부를 판단합니다.
+          </p>
+          <p className="mt-3 font-medium text-slate-600">작성자는 위 후기 운영정책을 확인하였으며 이에 동의합니다.</p>
+        </div>
+
         {/* 동의 */}
         <div className="mt-4 flex flex-col gap-2">
           <ConsentRow label="개인정보 수집·이용 동의" required value={consentPrivacy} onChange={setConsentPrivacy} />
+          <ConsentRow label="후기 게시 및 운영정책 동의" required value={consentPolicy} onChange={setConsentPolicy} />
           <ConsentRow label="여행후기(사진·영상·글 등) 홍보 활용 동의" value={consentPromo} onChange={setConsentPromo} />
         </div>
 

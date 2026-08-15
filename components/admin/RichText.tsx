@@ -37,14 +37,20 @@ const SYMBOLS = [
   "「", "」", "『", "』", "【", "】", "〔", "〕", "“", "”", "‘", "’",
 ];
 
+/** 입력창 기본 글자 크기 — 미지정 시 기존(vw) 크기 */
+const DEFAULT_EDIT_TEXT = "text-[min(1.08vw,20.736px)] max-[991px]:text-[min(2.62vw,15.72px)] max-[501px]:text-[3.18vw]";
+
 export default function RichText({
   value,
   onChange,
   multiline,
+  textClass = DEFAULT_EDIT_TEXT,
 }: {
   value?: string;
   onChange: (v: string) => void;
   multiline?: boolean;
+  /** 실제 상세페이지에 나갈 크기를 넘기면 입력창도 같은 크기로 보인다 (보이는 대로 = 나가는 대로) */
+  textClass?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
@@ -312,7 +318,7 @@ export default function RichText({
         onMouseUp={saveSel}
         onSelect={saveSel}
         onBlur={() => setSymOpen(false)}
-        className={`px-3 py-2 text-[min(1.08vw,20.736px)] max-[991px]:text-[min(2.62vw,15.72px)] max-[501px]:text-[3.18vw] font-medium text-[#364153] outline-none ${multiline ? "min-h-[3.5em]" : ""}`}
+        className={`px-3 py-2 ${textClass} font-medium text-[#364153] outline-none ${multiline ? "min-h-[3.5em]" : ""}`}
         style={{ fontFamily: "Inter, var(--font-sans)", whiteSpace: "pre-wrap" }}
       />
     </div>

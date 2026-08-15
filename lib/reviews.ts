@@ -29,6 +29,7 @@ function toReview(id: string, d: Record<string, unknown>): Review {
     userId: (d.userId as string | undefined) ?? undefined,
     consentPrivacy: (d.consentPrivacy as boolean | undefined) ?? undefined,
     consentPromo: (d.consentPromo as boolean | undefined) ?? undefined,
+    consentPolicy: (d.consentPolicy as boolean | undefined) ?? undefined,
     createdAt: (d.createdAt as string | undefined) ?? undefined,
     order: (d.order as number | undefined) ?? undefined,
   };

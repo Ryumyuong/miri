@@ -9,7 +9,7 @@ import { useVoyages } from "@/lib/useVoyages";
 import { usePorts } from "@/lib/usePorts";
 import ImageUploader from "@/components/ImageUploader";
 import ItineraryView from "@/components/site/ItineraryView";
-import { BLOCK_META, BLOCK_ORDER, BLOCK_FIELDS, BLOCK_STYLE, isRichField } from "@/lib/itinerary-blocks";
+import { BLOCK_META, BLOCK_ORDER, BLOCK_FIELDS, BLOCK_STYLE, isRichField, ITIN_BODY_TEXT } from "@/lib/itinerary-blocks";
 import RichText from "@/components/admin/RichText";
 
 const uid = () =>
@@ -76,7 +76,16 @@ const BLOCK_SPECS = (Object.keys(BLOCK_FIELDS) as ItineraryBlockType[]).map((typ
 const specOf = (t: ItineraryBlockType) => BLOCK_SPECS.find((s) => s.type === t)!;
 
 // 24시 시/분 드롭다운 (오전/오후 없이) — 저장값 "HH:MM"
-function TimeSelect({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+function TimeSelect({
+  value,
+  onChange,
+  // 기본값은 항공 구간 폼 기준(옆 칸 FLIGHT_INP 과 동일). 일반 필드에서는 상세페이지 크기를 넘긴다.
+  textClass = "text-[1.19em] max-[501px]:text-[2.6vw]",
+}: {
+  value?: string;
+  onChange: (v: string) => void;
+  textClass?: string;
+}) {
   const parts = (value || "").split(":");
   const h = parts[0] ?? "";
   const m = parts[1] ?? "";
@@ -84,7 +93,8 @@ function TimeSelect({ value, onChange }: { value?: string; onChange: (v: string)
     if (!nh && !nm) return onChange("");
     onChange(`${(nh || "00").padStart(2, "0")}:${(nm || "00").padStart(2, "0")}`);
   };
-  const sel = "rounded-[10px] bg-[#F9FAFB] px-2 py-2 text-[0.875em] max-[501px]:text-[2.4vw] font-medium text-[#364153] outline-none transition focus:bg-white";
+  // 옆 칸(출발일·도착일 등)과 글자 크기·높이·모서리를 맞춘다. w-full 만 빼서 내용 폭에 맞춤
+  const sel = `rounded-[8px] bg-[#F9FAFB] px-2.5 py-1.5 ${textClass} font-medium text-[#364153] outline-none transition focus:bg-white`;
   return (
     <div className="flex items-center gap-1">
       <select value={h} onChange={(e) => setHM(e.target.value, m)} className={sel} style={{ fontFamily: "Inter, var(--font-sans)" }}>
@@ -911,7 +921,7 @@ function BlockCard({
                 <select
                   value={(block[f.key] as string) ?? ""}
                   onChange={(e) => onPatch({ [f.key]: e.target.value })}
-                  className={`w-full rounded-[10px] bg-[#F9FAFB] py-2 text-[min(1.2128vw,23.2866px)] max-[991px]:text-[min(3.1478vw,18.8865px)] max-[501px]:text-[3.0582vw] font-medium text-[#364153] outline-none transition focus:bg-white ${
+                  className={`w-full rounded-[10px] bg-[#F9FAFB] py-2 ${ITIN_BODY_TEXT} font-medium text-[#364153] outline-none transition focus:bg-white ${
                     f.icon ? "pl-10 pr-3" : "px-3"
                   }`}
                   style={{ fontFamily: "Inter, var(--font-sans)", ...f.valueStyle }}
@@ -929,6 +939,8 @@ function BlockCard({
                 value={(block[f.key] as string) ?? ""}
                 onChange={(v) => onPatch({ [f.key]: v })}
                 multiline={f.area}
+                // 입력창을 실제 상세페이지 크기(제목 18px / 내용 16px)로 보여준다
+                textClass={f.valueClass ?? ITIN_BODY_TEXT}
               />
             ) : f.color ? (
               <div className="flex items-center gap-2">
@@ -946,7 +958,7 @@ function BlockCard({
                 )}
               </div>
             ) : f.time ? (
-              <TimeSelect value={(block[f.key] as string) ?? ""} onChange={(v) => onPatch({ [f.key]: v })} />
+              <TimeSelect value={(block[f.key] as string) ?? ""} onChange={(v) => onPatch({ [f.key]: v })} textClass={ITIN_BODY_TEXT} />
             ) : (
               <div className="relative">
                 {f.icon && (
@@ -962,7 +974,7 @@ function BlockCard({
                   value={(block[f.key] as string) ?? ""}
                   onChange={(e) => onPatch({ [f.key]: e.target.value })}
                   placeholder={`${f.label} 입력`}
-                  className={`w-full rounded-[10px] bg-[#F9FAFB] py-2 text-[min(1.2128vw,23.2866px)] max-[991px]:text-[min(3.1478vw,18.8865px)] max-[501px]:text-[3.0582vw] font-medium text-[#364153] outline-none transition focus:bg-white ${
+                  className={`w-full rounded-[10px] bg-[#F9FAFB] py-2 ${ITIN_BODY_TEXT} font-medium text-[#364153] outline-none transition focus:bg-white ${
                     f.icon ? "pl-10 pr-3" : "px-3"
                   }`}
                   style={{ fontFamily: "Inter, var(--font-sans)" }}
@@ -981,7 +993,8 @@ function BlockCard({
         <span className="pointer-events-none absolute bottom-0 left-[-1.4em] top-0 w-[2px]" style={BLOCK_STYLE.descRule} />
         {isRichField(f) ? (
           <div className="py-[0.6em] pl-[1.2em] pr-[1.2em]">
-            <RichText value={(block[f.key] as string) ?? ""} onChange={(v) => onPatch({ [f.key]: v })} multiline />
+            {/* 설명·내용 = 상세페이지에서 16px */}
+            <RichText value={(block[f.key] as string) ?? ""} onChange={(v) => onPatch({ [f.key]: v })} multiline textClass={ITIN_BODY_TEXT} />
           </div>
         ) : (
           <textarea
@@ -989,7 +1002,7 @@ function BlockCard({
             onChange={(e) => onPatch({ [f.key]: e.target.value })}
             rows={2}
             placeholder={`${f.label}을 입력하세요`}
-            className="w-full resize-none bg-transparent py-[1.1em] pl-[1.2em] pr-[1.2em] text-[min(1.386vw,26.6112px)] max-[991px]:text-[min(3.5974vw,21.5847px)] max-[501px]:text-[3.4951vw] leading-[1.8] text-[#6A7282] outline-none [field-sizing:content] placeholder:text-slate-300"
+            className={`w-full resize-none bg-transparent py-[1.1em] pl-[1.2em] pr-[1.2em] ${ITIN_BODY_TEXT} leading-[1.8] text-[#6A7282] outline-none [field-sizing:content] placeholder:text-slate-300`}
           />
         )}
       </div>
@@ -1097,7 +1110,7 @@ function MealEdit({ block, onPatch }: { block: ItineraryBlock; onPatch: (p: Part
             value={(block[key] as string) ?? ""}
             onChange={(e) => onPatch({ [key]: e.target.value })}
             placeholder="내용 입력 (예: 선상식 · 비우면 미포함)"
-            className="w-full rounded-[10px] bg-[#F9FAFB] px-3 py-2 text-[min(1.2619vw,24.2273px)] max-[991px]:text-[min(2.8708vw,17.2247px)] max-[501px]:text-[3.3204vw] font-medium text-[#364153] outline-none transition focus:bg-white"
+            className={`w-full rounded-[10px] bg-[#F9FAFB] px-3 py-2 ${ITIN_BODY_TEXT} font-medium text-[#364153] outline-none transition focus:bg-white`}
             style={{ fontFamily: "Inter, var(--font-sans)" }}
           />
         </div>

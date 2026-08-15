@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 /**
  * 미리크루즈 메인 히어로 — 배경 이미지 5개 캐러셀 + 슬라이드별 텍스트/버튼.
  *  · 6초마다 자동 전환(수동 조작 시 타이머 리셋)
- *  · 좌측 숫자(01~05)를 누르면 해당 슬라이드로 이동
+ *  · 좌측 숫자(01~05)를 누르면 해당 슬라이드로 이동, 06은 긴 인트로 영상
  *  · 중앙 텍스트(THE PREMIUM CRUISE 등) + CTA 2버튼, 하단 검색바는 유지
  */
 
@@ -72,15 +72,18 @@ const SLIDES: Slide[] = [
   },
 ];
 
-/** 히어로 영상 — [0]=인트로(약 54초, 텍스트 없음), [1..5]=SLIDES와 1:1 대응(각 5초) */
+/** 히어로 영상 — hero-2~6이 앞으로 오고 긴 인트로(hero-1)가 맨 뒤(06번)로 이동.
+ *  [0..4] = SLIDES와 1:1 대응(각 5초, 문구 그대로 따라옴), [5] = 인트로(약 54초, 텍스트 없음) */
 const VIDEOS = [
-  "/hero/hero-1.mp4",
   "/hero/hero-2.mp4",
   "/hero/hero-3.mp4",
   "/hero/hero-4.mp4",
   "/hero/hero-5.mp4",
   "/hero/hero-6.mp4",
+  "/hero/hero-1.mp4",
 ];
+/** 인트로(긴 영상) 위치 = 마지막 칸 */
+const INTRO_INDEX = VIDEOS.length - 1;
 
 /** 데스크톱은 한 줄(sep로 연결), 모바일은 배열 항목마다 줄바꿈 */
 function Lines({ parts, sep = " " }: { parts: string[]; sep?: string }) {
@@ -122,11 +125,11 @@ export default function SiteHero() {
   const [people, setPeople] = useState(2);
   const [regionOpen, setRegionOpen] = useState(false);
 
-  // 인트로(hero-1, 약 54초) 재생 중에는 텍스트·인덱스를 숨긴다.
-  // 인트로가 끝나면 hero-2~6(각 5초)이 순서대로 돌며, 마지막 뒤에는 hero-2로 되돌아간다(인트로는 1회만).
-  const [intro, setIntro] = useState(true);
+  // 01~05번(hero-2~6)이 문구와 함께 순서대로 돌고, 마지막 06번에서 긴 인트로(hero-1)가 재생된다.
+  // 인트로 재생 중에는 텍스트·인덱스를 숨기고, 끝나면 다시 01번으로 돌아간다.
+  const [intro, setIntro] = useState(false);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
-  const activeVideo = intro ? 0 : slide + 1;
+  const activeVideo = intro ? INTRO_INDEX : slide;
 
   // 모바일(≤990) 여부 — 모바일에선 용량이 큰 인트로(hero-1)를 재생/다운로드하지 않는다.
   const [isMobile, setIsMobile] = useState(false);
@@ -138,7 +141,7 @@ export default function SiteHero() {
     return () => mq.removeEventListener("change", on);
   }, []);
 
-  // 모바일이면 인트로를 건너뛰고 첫 슬라이드(hero-2)부터 시작
+  // 모바일이면 인트로(06번)를 건너뛰고 첫 슬라이드로 되돌린다
   useEffect(() => {
     if (isMobile && intro) {
       setIntro(false);
@@ -150,15 +153,22 @@ export default function SiteHero() {
   useEffect(() => {
     videoRefs.current.forEach((v, i) => {
       if (!v) return;
-      // 모바일에선 인트로(hero-1)는 절대 재생하지 않음
-      if (i === activeVideo && !(isMobile && i === 0)) {
+      // 모바일에선 인트로(06번, 대용량)는 절대 재생하지 않음
+      if (i === activeVideo && !(isMobile && i === INTRO_INDEX)) {
         v.currentTime = 0;
         void v.play().catch(() => {});
       } else if (!v.paused) {
         v.pause();
       }
     });
-    const next = intro ? 1 : ((slide + 1) % SLIDES.length) + 1;
+    // 다음 순서: 인트로 뒤 → 첫 슬라이드 / 마지막 슬라이드 뒤 → 인트로(모바일은 첫 슬라이드)
+    const next = intro
+      ? 0
+      : slide < SLIDES.length - 1
+        ? slide + 1
+        : isMobile
+          ? 0
+          : INTRO_INDEX;
     const nv = videoRefs.current[next];
     if (nv && nv.preload !== "auto") {
       nv.preload = "auto";
@@ -172,7 +182,7 @@ export default function SiteHero() {
   };
   const goPrev = () => goTo((slide - 1 + SLIDES.length) % SLIDES.length);
   const goNext = () => goTo((slide + 1) % SLIDES.length);
-  const goIntro = () => setIntro(true); // 01번 = 인트로(긴 영상)
+  const goIntro = () => setIntro(true); // 06번 = 인트로(긴 영상)
 
   // 모바일: 히어로 좌우 스와이프로 슬라이드 이동 (왼쪽 스와이프=다음, 오른쪽=이전)
   const touchX = useRef<number | null>(null);
@@ -188,13 +198,13 @@ export default function SiteHero() {
     else goPrev();
   };
 
-  // 영상 재생 종료 처리 — hero-1(인트로/긴 영상) → 첫 슬라이드, 마지막 슬라이드(hero-6) → 다시 인트로로 (1~6 무한 루프)
+  // 영상 재생 종료 처리 — 인트로(06) 끝 → 01번으로, 마지막 슬라이드(05) 끝 → 인트로로 (1~6 무한 루프)
   const onVideoEnded = (videoIdx: number) => {
-    if (videoIdx === 0) {
+    if (videoIdx === INTRO_INDEX) {
       setSlide(0);
       setIntro(false);
-    } else if (videoIdx === VIDEOS.length - 1) {
-      // PC: 마지막 영상 끝 → 긴 영상(hero-1)부터 다시 / 모바일: 인트로 생략, 첫 슬라이드로 순환
+    } else if (videoIdx === SLIDES.length - 1) {
+      // PC: 마지막 슬라이드 끝 → 긴 영상(hero-1) 재생 / 모바일: 인트로 생략, 첫 슬라이드로 순환
       if (isMobile) goNext();
       else setIntro(true);
     } else {
@@ -240,10 +250,10 @@ export default function SiteHero() {
       onTouchEnd={onTouchEnd}
     >
       {/* ── 배경 영상 6개를 겹쳐두고 활성 1개만 재생(크로스페이드) ──
-           hero-1 = 인트로(1회), hero-2~6 = 슬라이드 영상(각 5초, 순환) */}
+           [0~4] = hero-2~6(슬라이드 문구와 1:1), [5] = 인트로 hero-1(텍스트 없음, 1회) */}
       {VIDEOS.map((src, i) => (
         <video
-          key={src}
+          key={i}
           ref={(el) => {
             videoRefs.current[i] = el;
           }}
@@ -251,15 +261,15 @@ export default function SiteHero() {
             i === activeVideo ? "opacity-100" : "opacity-0"
           }`}
           src={src}
-          poster={i === 0 ? "/hero/slide-1.webp" : SLIDES[i - 1]?.img}
-          autoPlay={i === 0 && !isMobile}
+          poster={i === INTRO_INDEX ? SLIDES[0].img : SLIDES[i].img}
+          autoPlay={i === 0}
           muted
           playsInline
-          preload={i === 0 && !isMobile ? "auto" : "none"}
+          preload={i === 0 ? "auto" : "none"}
           onEnded={() => onVideoEnded(i)}
         />
       ))}
-      {/* 텍스트 가독성용 오버레이 — 인트로(hero-1, 텍스트 없음) 재생 중엔 숨김 */}
+      {/* 텍스트 가독성용 오버레이 — 인트로(06번 hero-1, 텍스트 없음) 재생 중엔 숨김 */}
       {!intro && <div className="absolute inset-0 bg-black/20 transition-opacity duration-500" />}
 
       {/* ── 중앙 텍스트 + CTA (겹침 없이 완전히 사라진 뒤 다음 글자 등장) ── */}
@@ -337,13 +347,13 @@ export default function SiteHero() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/arrow-up.png" alt="" className="h-[1em] w-auto object-contain" />
         </button>
-        {/* 01 = 인트로(hero-1), 02~06 = hero-2~6 */}
+        {/* 01~05 = 슬라이드 1~5(hero-2~6), 06 = 인트로(hero-1) */}
         {VIDEOS.map((_, i) => {
-          const on = i === 0 ? intro : !intro && slide === i - 1;
+          const on = i === INTRO_INDEX ? intro : !intro && slide === i;
           return (
           <button
             key={i}
-            onClick={i === 0 ? goIntro : () => goTo(i - 1)}
+            onClick={i === INTRO_INDEX ? goIntro : () => goTo(i)}
             className={`flex items-center gap-[0.6em] transition ${
               on ? "opacity-100" : "opacity-50 hover:opacity-80"
             }`}

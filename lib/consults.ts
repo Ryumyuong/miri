@@ -3,7 +3,7 @@ import {
   getDocs, onSnapshot, query, orderBy,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Consult } from "./types";
+import type { Consult, AlertItem } from "./types";
 import { consults as seedData } from "./mock-data";
 
 const COL = "consults";
@@ -20,6 +20,25 @@ function toConsult(id: string, d: Record<string, unknown>): Consult {
     reply: (d.reply as string | undefined) ?? undefined,
     repliedAt: (d.repliedAt as string | undefined) ?? undefined,
   };
+}
+
+/** 아직 답변하지 않은 상담문의(신규)를 운영 알림으로 변환 — 접수 즉시 관리자 알림에 표시 */
+export function computeConsultAlerts(consults: Consult[]): AlertItem[] {
+  return consults
+    .filter((c) => c.status === "신규")
+    .map((c) => {
+      const topic = c.topic.replace(/\s+/g, " ").trim();
+      return {
+        id: `consult-new-${c.id}`,
+        level: "info" as const,
+        tag: "새 상담문의",
+        message:
+          `${c.customerName || "이름 미기재"} 고객 · ${c.phone || "연락처 미기재"}` +
+          (c.createdAt ? ` (${c.createdAt} 접수)` : "") +
+          (topic ? ` — ${topic.length > 40 ? topic.slice(0, 40) + "…" : topic}` : ""),
+        href: "/admin/consults",
+      };
+    });
 }
 
 export function subscribeConsults(cb: (c: Consult[]) => void) {

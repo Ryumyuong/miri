@@ -276,6 +276,7 @@ export interface AlertItem {
   level: AlertLevel;
   tag: string; // D-150 / 여권 만료 / 미제출 ...
   message: string;
+  href?: string; // 클릭 시 이동할 관리자 페이지 (자동 알림에서 사용)
 }
 
 /** 고객 후기 */
@@ -300,6 +301,7 @@ export interface Review {
   userId?: string; // 작성 회원 계정 id (본인 수정/삭제 판정용)
   consentPrivacy?: boolean; // 개인정보 수집·이용 동의
   consentPromo?: boolean; // 후기 홍보 활용 동의
+  consentPolicy?: boolean; // 후기 게시 및 운영정책 동의
   createdAt?: string;
   order?: number; // 노출 순서 (관리자 수동 정렬, 작을수록 먼저)
 }

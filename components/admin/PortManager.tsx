@@ -6,8 +6,15 @@ import { usePorts } from "@/lib/usePorts";
 import { useVoyages } from "@/lib/useVoyages";
 import { addPort, updatePort, deletePort, seedPorts, type PortInput } from "@/lib/ports";
 import { groupVoyages, groupKey } from "@/lib/voyage-group";
+import { ASIA_REGIONS } from "@/lib/region-filter";
 import ImageUploader from "@/components/ImageUploader";
 import Pagination from "@/components/admin/Pagination";
+
+/** 카드 수정 모달 글자 크기 — 관리자 화면은 폭이 고정이라 vw 가 아니라 px 로 잡는다.
+ *  본문(라벨·입력칸·버튼·목록)은 전부 MODAL_TEXT 하나로 통일. */
+const MODAL_TEXT = "text-[14px]";
+const MODAL_SUB = "text-[12px]"; // 목록 부제 등 보조 문구
+const MODAL_TITLE = "text-[18px]";
 
 /** voyageIds 가 걸쳐 있는 크루즈 상품(그룹) 수 — 카드 "N개 상품에 사용 중" 집계용 */
 function productCount(voyages: Voyage[], voyageIds?: string[]): number {
@@ -30,7 +37,10 @@ const kindOf = (p: PortCard): PortKind => p.kind ?? "기항지";
 // 세부 권역 순서 (탭/섹션 정렬 + 폼 선택지 공용). 목록에 없는 권역은 뒤로.
 const PORT_REGION_ORDER = ["서부지중해", "동부지중해", "북유럽", "미주·알래스카", "중동", "동남아", "동북아"];
 // 표시 전용 라벨 (데이터 값은 그대로, 화면 표기만 변경)
-const regionLabel = (r: string) => (r === "동남아" ? "동남아/동북아" : r);
+const regionLabel = (r: string) => (ASIA_REGIONS.includes(r) ? "동남아/동북아" : r);
+// 동남아·동북아는 한 묶음으로 취급 (한쪽만 골라도 둘 다 표시)
+const sameRegionGroup = (a: string, b: string) =>
+  a === b || (ASIA_REGIONS.includes(a) && ASIA_REGIONS.includes(b));
 const regionRank = (r: string) => {
   const i = PORT_REGION_ORDER.indexOf(r);
   return i === -1 ? 999 : i;
@@ -76,13 +86,24 @@ export default function PortManager() {
     }))
     .sort((a, b) => regionRank(a.region) - regionRank(b.region) || a.region.localeCompare(b.region, "ko"));
 
+  // 권역 칩 — 동남아·동북아는 하나로 합쳐 개수도 합산해 표시
+  const regionChips = groups.reduce<{ region: string; count: number }[]>((acc, g) => {
+    const merged = ASIA_REGIONS.includes(g.region)
+      ? acc.find((c) => ASIA_REGIONS.includes(c.region))
+      : undefined;
+    if (merged) merged.count += g.cards.length;
+    else acc.push({ region: g.region, count: g.cards.length });
+    return acc;
+  }, []);
+
   // 지역순으로 평탄화 후 12개/페이지로 페이징 (카드마다 소속 지역·지역 내 인덱스 유지 → 순서이동에 사용)
   const flat = groups.flatMap((g) =>
     g.cards.map((card, idx) => ({ region: g.region, card, regionCards: g.cards, idx })),
   );
   // 선택한 권역만 필터 (없어진 권역이 선택돼 있으면 전체로 간주)
-  const activeRegion = region !== "전체" && groups.some((g) => g.region === region) ? region : "전체";
-  const filtered = activeRegion === "전체" ? flat : flat.filter((it) => it.region === activeRegion);
+  const activeRegion = region !== "전체" && groups.some((g) => sameRegionGroup(g.region, region)) ? region : "전체";
+  const filtered =
+    activeRegion === "전체" ? flat : flat.filter((it) => sameRegionGroup(it.region, activeRegion));
   const pagedItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   // 현재 페이지 카드들을 지역별로 다시 묶어 섹션 렌더 (지역 구분 유지)
   const pageGroups: { region: string; items: typeof pagedItems }[] = [];
@@ -153,12 +174,12 @@ export default function PortManager() {
       {/* 권역 필터 — 원하는 권역만 골라 보면 화면이 짧아집니다 */}
       {!loading && kindPorts.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-1.5">
-          {[{ region: "전체", count: kindPorts.length }, ...groups.map((g) => ({ region: g.region, count: g.cards.length }))].map((c) => (
+          {[{ region: "전체", count: kindPorts.length }, ...regionChips].map((c) => (
             <button
               key={c.region}
               onClick={() => { setRegion(c.region); setPage(1); }}
               className={`rounded-lg px-3 py-1.5 text-[min(0.9075vw,17.424px)] max-[991px]:text-[min(2.8266vw,16.9596px)] max-[501px]:text-[3.4328vw] font-semibold transition ${
-                activeRegion === c.region ? "bg-navy text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                sameRegionGroup(activeRegion, c.region) ? "bg-navy text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
               {regionLabel(c.region)} <span className="opacity-70">{c.count}</span>
@@ -308,8 +329,8 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <form onSubmit={save} className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white px-6 pt-6 pb-0 shadow-xl">
         <div className="mb-5 flex items-start justify-between gap-3">
-          <h2 className="text-[min(1.2375vw,23.76px)] max-[991px]:text-[min(3.8543vw,23.1258px)] max-[501px]:text-[4.6808vw] font-bold text-slate-800">{initial ? "관광정보 카드 수정" : "관광정보 카드 생성"}</h2>
-          <button type="button" onClick={onClose} className="shrink-0 text-[min(1.078vw,20.6976px)] max-[991px]:text-[min(3.3576vw,20.1456px)] max-[501px]:text-[4.0776vw] text-slate-400 transition hover:text-slate-600" aria-label="닫기">✕</button>
+          <h2 className={`${MODAL_TITLE} font-bold text-slate-800`}>{initial ? "관광정보 카드 수정" : "관광정보 카드 생성"}</h2>
+          <button type="button" onClick={onClose} className={`shrink-0 ${MODAL_TITLE} text-slate-400 transition hover:text-slate-600`} aria-label="닫기">✕</button>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="구분" full>
@@ -319,7 +340,7 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
                   key={k}
                   type="button"
                   onClick={() => set("kind", k)}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold transition ${
+                  className={`flex-1 rounded-lg border px-3 py-2 ${MODAL_TEXT} font-semibold transition ${
                     (f.kind ?? "기항지") === k
                       ? "border-navy bg-navy text-white"
                       : "border-slate-200 text-slate-500 hover:bg-slate-50"
@@ -345,13 +366,13 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
           <Field label="국가"><input className={inp} value={f.country} onChange={(e) => set("country", e.target.value)} /></Field>
           <Field label={`적용 크루즈 상품 (${selectedGroupCount}개 선택) — 관광정보에 노출`} full>
             {groups.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 px-3 py-2 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">등록된 크루즈 상품이 없습니다.</p>
+              <p className={`rounded-lg bg-slate-50 px-3 py-2 ${MODAL_TEXT} text-slate-400`}>등록된 크루즈 상품이 없습니다.</p>
             ) : (
               <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200">
                 {groups.map(({ rep, members }) => (
                   <label
                     key={rep.id}
-                    className="flex cursor-pointer items-start gap-2 border-b border-slate-100 px-3 py-2 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] last:border-0 hover:bg-slate-50"
+                    className={`flex cursor-pointer items-start gap-2 border-b border-slate-100 px-3 py-2 ${MODAL_TEXT} last:border-0 hover:bg-slate-50`}
                   >
                     <input
                       type="checkbox"
@@ -361,7 +382,7 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
                     />
                     <span className="min-w-0">
                       <span className="block text-slate-600">{rep.shipName} · {rep.region} {rep.nights}박 {rep.days}일</span>
-                      <span className="block text-[0.7857em] text-slate-400">출발일 {members.length}개 (전체 적용)</span>
+                      <span className={`block ${MODAL_SUB} text-slate-400`}>출발일 {members.length}개 (전체 적용)</span>
                     </span>
                   </label>
                 ))}
@@ -374,13 +395,14 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
               onChange={(v) => set("imageUrl", v)}
               dir="ports"
               label="관광지 이미지를 끌어다 놓거나 클릭하여 업로드"
+              textClass={MODAL_TEXT}
             />
           </Field>
           <Field label="설명" full><textarea className={inp} rows={3} value={f.description} onChange={(e) => set("description", e.target.value)} /></Field>
         </div>
         <div className="sticky bottom-0 z-10 -mx-6 mt-6 flex justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4">
-          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-5 py-2.5 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold text-slate-600 hover:bg-slate-50">취소</button>
-          <button type="submit" disabled={saving} className="rounded-lg bg-navy px-5 py-2.5 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold text-white hover:bg-navy-dark disabled:opacity-50">
+          <button type="button" onClick={onClose} className={`rounded-lg border border-slate-300 px-5 py-2.5 ${MODAL_TEXT} font-semibold text-slate-600 hover:bg-slate-50`}>취소</button>
+          <button type="submit" disabled={saving} className={`rounded-lg bg-navy px-5 py-2.5 ${MODAL_TEXT} font-semibold text-white hover:bg-navy-dark disabled:opacity-50`}>
             {saving ? "저장 중…" : "저장"}
           </button>
         </div>
@@ -389,12 +411,14 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
   );
 }
 
-const inp = "w-full rounded-lg border border-slate-200 px-3 py-2 text-[1.25em] outline-none focus:border-brand";
+// 카드 수정 모달은 고정 px 스케일로 통일한다 — 라벨·입력칸·목록이 모두 14px.
+// (vw/em 이 섞여 있어 화면 폭에 따라 10px~25px 로 제각각이던 것을 맞춤)
+const inp = `w-full rounded-lg border border-slate-200 px-3 py-2 ${MODAL_TEXT} outline-none focus:border-brand`;
 
 function Field({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
   return (
     <div className={full ? "col-span-2" : ""}>
-      <label className="mb-1 block text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-slate-500">{label}</label>
+      <label className={`mb-1 block ${MODAL_TEXT} font-semibold text-slate-500`}>{label}</label>
       {children}
     </div>
   );

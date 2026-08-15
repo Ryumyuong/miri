@@ -20,6 +20,8 @@ import ShareMenu from "@/components/site/ShareMenu";
 import ItineraryView from "@/components/site/ItineraryView";
 import SpecialTerms from "@/components/site/SpecialTerms";
 import VideoGallery from "@/components/site/VideoGallery";
+import ProductGallery from "@/components/site/ProductGallery";
+import { SHOW_VIDEO_SECTION, VIDEO_TAB } from "@/lib/features";
 import PrintSheet from "@/components/site/PrintSheet";
 import TravelPrep from "@/components/site/TravelPrep";
 
@@ -46,6 +48,8 @@ function monthLabel(iso: string) {
   return `${iso.slice(0, 4)}년 ${iso.slice(5, 7)}월`;
 }
 
+// 배열 순서 = 섹션 id(sec-0 …). 탭을 빼야 할 땐 배열에서 지우지 말고 렌더링에서 걸러낼 것
+// (지우면 뒤쪽 인덱스가 밀려 다른 섹션으로 스크롤된다). 예: VIDEO_TAB
 const TABS = [
   "상품선택",
   "주요여행일정",
@@ -152,9 +156,20 @@ export default function CruiseBooking({
 
   // 상품 이미지·설명·특징은 선박 카드에서 관리 (없으면 기존 항차 값으로 폴백)
   const { ships } = useShips();
-  const ship = ships.find((s) => s.name === v.shipName);
-  const productImages = (ship?.productImages?.length ? ship.productImages : v.productImages) ?? [];
+  // 선박명 앞뒤 공백 차이로 카드가 안 붙는 일이 없도록 trim 비교
+  const ship = ships.find((s) => s.name.trim() === (v.shipName ?? "").trim());
+  const shipImages = ship?.productImages?.length ? ship.productImages : [];
+  // '상품정보' 상단 갤러리 사진들 — 선박 카드에 등록돼 있으면 그걸 전부,
+  // 없으면 이 상품의 대표 이미지 + 상품 이미지를 이어 붙여 한 묶음으로 넘겨 본다.
+  const productPhotos = shipImages.length
+    ? shipImages
+    : [v.thumbnail, ...(v.productImages ?? [])].filter((u): u is string => !!u);
   const productDesc = ship?.description || v.description;
+
+  // 영상 — URL이 실제로 들어간 것만 유효. 하나도 없으면 탭·섹션 자체를 노출하지 않는다.
+  // (SHOW_VIDEO_SECTION 이 false면 영상 유무와 무관하게 숨김 — lib/features.ts)
+  const videos = (v.videos ?? []).filter((x) => x.url?.trim());
+  const showVideo = SHOW_VIDEO_SECTION && videos.length > 0;
 
   // 상세 콘텐츠: 운항 일정에 설정값이 있으면 사용, 없으면 기본값
   const included = v.included?.length ? v.included : INCLUDED; // 상품별 설정값 우선, 없으면 기본값
@@ -285,7 +300,9 @@ export default function CruiseBooking({
         }`}
       >
         <nav className="flex overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {TABS.map((t, i) => (
+          {TABS.filter((t) => showVideo || t !== VIDEO_TAB).map((t) => {
+            const i = TABS.indexOf(t); // 섹션 id는 원본 배열 인덱스 기준
+            return (
             <Fragment key={t}>
               {i > 0 && (
                 <span aria-hidden className="h-[18px] w-px shrink-0 self-center bg-[#0000001a]" />
@@ -304,7 +321,8 @@ export default function CruiseBooking({
                 {t}
               </button>
             </Fragment>
-          ))}
+            );
+          })}
         </nav>
       </div>
 
@@ -460,19 +478,12 @@ export default function CruiseBooking({
             <section>
               <h2 className="mb-6 text-[min(1.65vw,31.68px)] max-[991px]:text-[min(5.1393vw,30.8358px)] max-[501px]:text-[5.62vw] font-black text-navy">상품정보</h2>
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                {/* 대표 이미지 */}
-                <div className="relative aspect-video w-full overflow-hidden">
-                  {v.thumbnail ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={v.thumbnail} alt={v.title} className="h-full w-full object-cover" />
-                  ) : (
-                    <div
-                      className={`h-full w-full bg-gradient-to-br ${
-                        regionGradient[v.region] ?? "from-sky-400 to-blue-700"
-                      }`}
-                    />
-                  )}
-                </div>
+                {/* 상품 사진 — 선박 카드에 등록된 사진들을 큰 화면에서 넘겨 본다 */}
+                <ProductGallery
+                  images={productPhotos}
+                  alt={v.title}
+                  fallbackClass={`bg-gradient-to-br ${regionGradient[v.region] ?? "from-sky-400 to-blue-700"}`}
+                />
 
                 <div className="p-6">
                   <p className="whitespace-pre-line text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] leading-relaxed text-slate-600">
@@ -496,16 +507,7 @@ export default function CruiseBooking({
                     </div>
                   )}
 
-                  {/* 상품 이미지 갤러리 (선박 카드) */}
-                  {productImages.length > 0 && (
-                    <div className="mt-6 grid grid-cols-3 gap-3 max-[991px]:grid-cols-2 max-[501px]:grid-cols-1">
-                      {productImages.map((url, i) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img key={url} src={url} alt={`상품 이미지 ${i + 1}`} className="aspect-video w-full rounded-lg object-cover" />
-                      ))}
-                    </div>
-                  )}
-
+                  {/* 사진은 위 갤러리(ProductGallery)에서 전부 넘겨 볼 수 있으므로 하단 격자는 두지 않음 */}
                 </div>
               </div>
             </section>
@@ -642,11 +644,14 @@ export default function CruiseBooking({
             </section>
           </div>
 
-          <div id="sec-8" className="scroll-mt-[150px] [&:not(:first-child)]:mt-14">
-            <section>
-              <VideoGallery videos={v.videos} />
-            </section>
-          </div>
+          {/* 영상으로 만나는 크루즈 — 등록된 영상이 없으면 섹션 자체를 만들지 않는다 */}
+          {showVideo && (
+            <div id="sec-8" className="scroll-mt-[150px] [&:not(:first-child)]:mt-14">
+              <section>
+                <VideoGallery videos={videos} />
+              </section>
+            </div>
+          )}
 
           {/* 여행준비 안내 (영상 ↔ 안전/유의사항 사이) */}
           <div id="sec-9" className="scroll-mt-[150px] [&:not(:first-child)]:mt-14">
@@ -824,7 +829,7 @@ export default function CruiseBooking({
       {lightbox && (
         <div
           onClick={() => setLightbox(null)}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-[100] flex cursor-zoom-out items-center justify-center bg-black/80 p-4"
         >
           <button
             onClick={() => setLightbox(null)}
@@ -833,13 +838,9 @@ export default function CruiseBooking({
           >
             ×
           </button>
+          {/* 사진 자체를 눌러도 닫힌다 (배경·× 와 동일) */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightbox}
-            alt="지도"
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
-          />
+          <img src={lightbox} alt="지도" className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain" />
         </div>
       )}
     </div>
