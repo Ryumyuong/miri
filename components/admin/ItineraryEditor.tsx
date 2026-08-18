@@ -143,6 +143,19 @@ export default function ItineraryEditor({ voyage }: { voyage: Voyage }) {
     // 미발행 초안(itineraryDaysDraft)이 있으면 이어서 편집, 없으면 발행본(itineraryDays)에서 시작
     normalizeDays(voyage.itineraryDaysDraft ?? voyage.itineraryDays ?? [], tripDays(voyage.departDate, voyage.arriveDate)),
   );
+  // 편집기를 열 때 발행본이 아니라 옛 초안을 불러온 상태인지 (내용이 실제로 다를 때만 경고)
+  const [openedFromStaleDraft, setOpenedFromStaleDraft] = useState(
+    () =>
+      !!voyage.itineraryDaysDraft?.length &&
+      !!voyage.itineraryDays?.length &&
+      JSON.stringify(voyage.itineraryDaysDraft) !== JSON.stringify(voyage.itineraryDays),
+  );
+  // 공개 중인 발행본으로 되돌리기 (옛 초안이 잘못 올라온 경우 복구용)
+  const loadPublished = () => {
+    if (!confirm("사이트에 공개 중인 발행본을 불러올까요?\n지금 화면의 편집 내용은 사라집니다.")) return;
+    setDays(normalizeDays(voyage.itineraryDays ?? [], tripDays(voyage.departDate, voyage.arriveDate)));
+    setOpenedFromStaleDraft(false);
+  };
   const [active, setActive] = useState(0);
   const [saving, setSaving] = useState(false);
   const [savingKind, setSavingKind] = useState<null | "draft" | "published">(null); // 어느 버튼을 저장 중인지
@@ -314,10 +327,14 @@ export default function ItineraryEditor({ voyage }: { voyage: Voyage }) {
         return;
       }
 
-      // ── 발행: 발행본(itineraryDays)에 반영 + 공개 (초안은 작업본으로 유지) ──
+      // ── 발행: 발행본(itineraryDays)에 반영 + 공개 ──
+      // 초안(itineraryDaysDraft)은 반드시 비운다. 남겨두면 다음에 편집기를 열 때
+      // 발행본이 아니라 옛 초안을 불러오고(142행), 그 상태로 다시 저장하면
+      // 방금 발행한 내용이 옛 내용으로 덮여버린다. ("발행했는데 전 이미지로 돌아감")
       const sibIds = [voyage.id];
       await updateVoyage(voyage.id, {
         itineraryDays: clean,
+        itineraryDaysDraft: null,
         itineraryStatus: "published",
       });
 
@@ -488,6 +505,23 @@ export default function ItineraryEditor({ voyage }: { voyage: Voyage }) {
         <p className="mt-1.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-[#BB4D00]">
           ※ <b>임시저장</b>은 사이트에 노출되지 않습니다. 일정 완성 후 <b>발행</b>해야 상세페이지에 공개됩니다.
         </p>
+
+        {/* 발행본과 다른 옛 초안이 남아 있는 경우 — 그대로 발행하면 발행본을 덮어쓰므로 미리 알린다 */}
+        {openedFromStaleDraft && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[14px] text-amber-900">
+            <span>
+              <b>미발행 임시저장본</b>을 불러왔습니다. 지금 화면은 <b>사이트에 공개 중인 내용과 다릅니다.</b>
+              이대로 발행하면 공개본이 이 내용으로 덮어써집니다.
+            </span>
+            <button
+              type="button"
+              onClick={loadPublished}
+              className="shrink-0 rounded-md border border-amber-400 bg-white px-3 py-1.5 text-[13px] font-semibold text-amber-800 transition hover:bg-amber-100"
+            >
+              공개본 불러오기
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 상품 요약 */}
@@ -748,7 +782,12 @@ function ReuseModal({
     setBusy(true);
     try {
       const clean = firestoreSafeDays(days);
-      await Promise.all([...targets].map((id) => updateVoyage(id, { itineraryDays: clean, itineraryStatus: "published" })));
+      // 덮어쓰는 상품의 옛 초안도 함께 비운다 (남으면 그쪽 편집기가 옛 내용을 되살린다)
+      await Promise.all(
+        [...targets].map((id) =>
+          updateVoyage(id, { itineraryDays: clean, itineraryDaysDraft: null, itineraryStatus: "published" }),
+        ),
+      );
       alert(`${targets.size}개 상품에 적용했습니다.`);
       onClose();
     } catch (e) {

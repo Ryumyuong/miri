@@ -171,7 +171,7 @@ function ShipForm({ initial, lines, onClose }: { initial?: ShipCard; lines: stri
           </Field>
           <Field label="정원"><input type="number" className={inp} value={f.capacity ?? ""} onChange={(e) => set("capacity", e.target.value === "" ? undefined : +e.target.value)} /></Field>
           <Field label="상품 설명 (상세 '상품정보' 탭 노출)" full><textarea className={inp} rows={3} value={f.description} onChange={(e) => set("description", e.target.value)} /></Field>
-          <Field label="이미지 (여러 장 · 첫 장은 상세 '상품정보' 탭 맨 위 큰 사진, 나머지는 그 아래 갤러리)" full>
+          <Field label="이미지 (여러 장 · 이 선박을 쓰는 상품들의 공통 사진 — 운항 일정에 '상품 이미지'가 있으면 그쪽이 우선)" full>
             <ImageUploader
               multiple
               value={f.productImages ?? []}

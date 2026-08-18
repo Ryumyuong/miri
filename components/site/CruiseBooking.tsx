@@ -158,12 +158,13 @@ export default function CruiseBooking({
   const { ships } = useShips();
   // 선박명 앞뒤 공백 차이로 카드가 안 붙는 일이 없도록 trim 비교
   const ship = ships.find((s) => s.name.trim() === (v.shipName ?? "").trim());
-  const shipImages = ship?.productImages?.length ? ship.productImages : [];
-  // '상품정보' 상단 갤러리 사진들 — 선박 카드에 등록돼 있으면 그걸 전부,
-  // 없으면 이 상품의 대표 이미지 + 상품 이미지를 이어 붙여 한 묶음으로 넘겨 본다.
-  const productPhotos = shipImages.length
-    ? shipImages
-    : [v.thumbnail, ...(v.productImages ?? [])].filter((u): u is string => !!u);
+  // '상품정보' 상단 갤러리 사진들 — 좁은 설정이 넓은 설정을 이긴다.
+  //   ① 이 상품에 등록한 '상품 이미지'  ② 선박 카드 공통 이미지  ③ 이 상품 대표 이미지
+  // (상품에 직접 올린 사진이 선박 공통 사진에 묻히지 않도록 ①이 최우선)
+  const productPhotos =
+    (v.productImages?.length && v.productImages) ||
+    (ship?.productImages?.length && ship.productImages) ||
+    [v.thumbnail].filter((u): u is string => !!u);
   const productDesc = ship?.description || v.description;
 
   // 영상 — URL이 실제로 들어간 것만 유효. 하나도 없으면 탭·섹션 자체를 노출하지 않는다.

@@ -40,7 +40,9 @@ export default function ShareMenu({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false); // 아래 공간이 부족하면 위로 펼친다
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +51,28 @@ export default function ShareMenu({
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  // 버튼이 화면 하단에 있으면 메뉴가 잘려서 스크롤해야 보인다 → 방향을 뒤집는다.
+  // 열려 있는 동안 스크롤·리사이즈로 위치가 바뀌어도 다시 계산.
+  useEffect(() => {
+    if (!open) return;
+    const decide = () => {
+      const el = btnRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const menuH = ref.current?.querySelector("[data-share-menu]")?.getBoundingClientRect().height ?? 170;
+      const below = window.innerHeight - r.bottom;
+      // 아래가 부족하고 위가 더 넓을 때만 위로
+      setUp(below < menuH + 16 && r.top > below);
+    };
+    decide();
+    window.addEventListener("scroll", decide, true);
+    window.addEventListener("resize", decide);
+    return () => {
+      window.removeEventListener("scroll", decide, true);
+      window.removeEventListener("resize", decide);
+    };
   }, [open]);
 
   const sendSms = () => {
@@ -116,13 +140,18 @@ export default function ShareMenu({
 
   return (
     <div ref={ref} className="relative" style={{ fontSize: "var(--font-base)" }}>
-      <button type="button" onClick={() => setOpen((v) => !v)} className={className}>
+      <button ref={btnRef} type="button" onClick={() => setOpen((v) => !v)} className={className}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/share.png" alt="" className="mr-[0.7em] inline-block h-[1em] w-[1em] align-middle object-contain" />
         공유하기
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-max min-w-[10em] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+        <div
+          data-share-menu
+          className={`absolute right-0 z-40 w-max min-w-[10em] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg ${
+            up ? "bottom-full mb-2" : "top-full mt-2"
+          }`}
+        >
           <button type="button" onClick={sendSms} className="block w-full whitespace-nowrap px-4 py-2.5 text-left text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-600 hover:bg-slate-50">
             📩 문자 보내기
           </button>
