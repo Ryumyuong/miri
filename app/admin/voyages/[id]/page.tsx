@@ -244,7 +244,7 @@ export default function VoyagePassengersPage() {
       voyageId: v.id, voyageTitle: v.title, departDate: v.departDate, arriveDate: v.arriveDate,
       name: first?.nameKo || "신규 승객", phone: first?.phone || "", room: first?.roomType || "내측",
       headcount: passengers.length, contractPaid: false, passengers,
-      createdByAdmin: true,
+      source: "admin",
     });
   };
 

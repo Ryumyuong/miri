@@ -174,6 +174,7 @@ export default function ReservePage() {
         passportExpiry: travelers[0]?.passportExpiry || undefined,
         contractPaid: false,
         code,
+        source: "web",
       });
       // 예약 후 여행자계약서 자동 발송 (상품코드/예약코드 포함) + 발송됨 표기
       try {

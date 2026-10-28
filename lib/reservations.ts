@@ -22,7 +22,7 @@ function toReservation(id: string, d: Record<string, unknown>): Reservation {
     passengers: (d.passengers as Reservation["passengers"]) ?? undefined,
     contractSentAt: (d.contractSentAt as string | undefined) ?? undefined,
     voyageChangeHistory: (d.voyageChangeHistory as Reservation["voyageChangeHistory"]) ?? undefined,
-    createdByAdmin: d.createdByAdmin === true || undefined,
+    source: d.source === "admin" || d.source === "web" ? d.source : undefined,
     voyageId: (d.voyageId as string) ?? "",
     voyageTitle: (d.voyageTitle as string) ?? "",
     departDate: (d.departDate as string) ?? "",

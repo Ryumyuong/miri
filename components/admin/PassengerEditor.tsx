@@ -196,8 +196,9 @@ export default function PassengerEditor({
             <h2 className="text-base font-bold text-slate-800">
               승객(일행) 정보
               {isNew && <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">신규 등록</span>}
-              {/* 관리자가 직접 등록한 예약만 표시 — 표시가 없으면 홈페이지 고객 예약 */}
-              {reservation.createdByAdmin && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">관리자 등록</span>}
+              {/* 등록 경로 — 표시가 없으면 기능 도입 전 데이터라 구분 불가 */}
+              {reservation.source === "admin" && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">관리자 등록</span>}
+              {reservation.source === "web" && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">홈페이지 예약</span>}
             </h2>
             {/* 신규는 아직 문서가 없어 예약코드·등록날짜가 없다 — 저장 시 자동 발급됨을 알려준다 */}
             <p className="mt-0.5 text-xs text-slate-400">

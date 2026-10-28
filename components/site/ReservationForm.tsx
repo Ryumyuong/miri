@@ -140,6 +140,7 @@ export default function ReservationForm({
         passportExpiry: passportExpiry || undefined,
         passportImage,
         contractPaid: false,
+        source: "web",
       });
       // 로그인 회원이면 여권 정보를 계정에 저장 (다음 신청 시 자동 입력)
       if (memberId && saveToAccount && (passportNumber || passportExpiry || passportImage)) {

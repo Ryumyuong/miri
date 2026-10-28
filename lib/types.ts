@@ -215,7 +215,7 @@ export interface Reservation {
   passengers?: Passenger[]; // 일행 승객 목록 (신규 구조)
   contractSentAt?: string; // 여행자계약서 문자 발송 시각 (있으면 '발송됨')
   voyageChangeHistory?: VoyageChangeEvent[]; // 일정 변경 이력
-  createdByAdmin?: boolean; // 관리자 화면에서 직접 등록한 예약 (없으면 홈페이지 고객 예약 또는 이전 데이터)
+  source?: "admin" | "web"; // 등록 경로 — 관리자 화면 직접 등록 / 홈페이지 고객 예약 (없으면 기능 도입 전 데이터)
   voyageId: string;
   voyageTitle: string;
   departDate: string; // 신청 시점 스냅샷
