@@ -13,12 +13,13 @@ import {
   seedVoyages,
   backfillVoyageCodes,
   computeDDay,
-  computeStatus,
+  liveStatus,
   type VoyageInput,
 } from "@/lib/voyages";
 import { SHOW_VIDEO_SECTION } from "@/lib/features";
 import { useReservations } from "@/lib/useReservations";
 import { useShips } from "@/lib/useShips";
+import { reservationTotals } from "@/lib/reservation-state";
 import { aggregateForVoyage } from "@/lib/reservations";
 import ImageUploader from "@/components/ImageUploader";
 import Pagination from "@/components/admin/Pagination";
@@ -89,7 +90,25 @@ export default function VoyageManager() {
   const openEdit = (v: Voyage) => setDialog({ mode: "edit", src: v });
   // 복제: 기존 일정을 그대로 채워 새 일정으로 저장 (예약/여권 지표는 신청 데이터 기반이라 자동 0)
   const openDuplicate = (v: Voyage) =>
-    setDialog({ mode: "new", src: { ...v, title: `${v.title} (복사본)` } });
+    setDialog({ mode: "new", src: { ...v, title: `${v.title} (복사본)`, hidden: undefined } });
+
+
+  // 홈페이지 숨김/노출 — 여행일정 편집기와 동일. 상품을 삭제·임시저장 없이 고객 화면에서만 내리거나 다시 올린다
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const toggleHidden = async (v: Voyage) => {
+    const msg = v.hidden
+      ? "이 상품을 홈페이지에 다시 노출할까요?"
+      : "이 상품을 홈페이지에서 숨길까요?\n관리자 화면에는 그대로 남고, 언제든 다시 노출할 수 있습니다.";
+    if (!confirm(msg)) return;
+    setTogglingId(v.id);
+    try {
+      await updateVoyage(v.id, { hidden: !v.hidden });
+    } catch (e) {
+      alert("변경 실패: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const remove = async (id: string, title: string) => {
     if (confirm(`"${title}" 일정을 삭제할까요?`)) {
@@ -264,6 +283,8 @@ export default function VoyageManager() {
         <div className="flex flex-col gap-4">
           {paged.map((v) => {
             const agg = aggregateForVoyage(reservations, v.id);
+            const totals = reservationTotals(v, agg.pax);
+            const currentStatus = liveStatus(v, agg.pax);
             return (
             <div
               key={v.id}
@@ -282,6 +303,11 @@ export default function VoyageManager() {
                       임시저장
                     </span>
                   )}
+                  {v.hidden && (
+                    <span className="rounded-md bg-slate-200 px-2 py-0.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-slate-600">
+                      홈페이지 숨김
+                    </span>
+                  )}
                   {v.isPrime && (
                     <span className="rounded-md bg-[#C9A961]/15 px-2 py-0.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-[#C9A961]">
                       ★ 프라임
@@ -289,10 +315,10 @@ export default function VoyageManager() {
                   )}
                   <span
                     className={`rounded-md px-2 py-0.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold ${
-                      statusBadge[v.status] ?? "bg-slate-100 text-slate-600"
+                      statusBadge[currentStatus] ?? "bg-slate-100 text-slate-600"
                     }`}
                   >
-                    {v.status}
+                    {currentStatus}
                   </span>
                   {v.dDay != null && v.dDay >= 0 && v.dDay <= 30 && (
                     <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-orange-600">
@@ -307,17 +333,27 @@ export default function VoyageManager() {
                 <span className="flex items-center gap-1.5"><img src="/icons/admin/v-calendar.png" alt="" className="h-3.5 w-3.5 object-contain" /> 출항: {v.departDate}</span>
                 <span className="flex items-center gap-1.5"><img src="/icons/admin/v-calendar.png" alt="" className="h-3.5 w-3.5 object-contain" /> 귀항: {v.arriveDate}</span>
                 <span className="flex items-center gap-1.5"><img src="/icons/admin/v-ship.png" alt="" className="h-3.5 w-3.5 object-contain" /> {v.shipName}</span>
-                <span className="flex items-center gap-1.5"><img src="/icons/admin/v-people.png" alt="" className="h-3.5 w-3.5 object-contain" /> {agg.pax}명 예약</span>
+                <span className="flex items-center gap-1.5"><img src="/icons/admin/v-people.png" alt="" className="h-3.5 w-3.5 object-contain" /> {totals.total}명 예약 (명부 {totals.registered}명 / {agg.reservedCount}팀 + 오프라인 {totals.offline}명)</span>
                 {/* eslint-enable @next/next/no-img-element */}
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
+                  <span className="w-full text-xs text-slate-500">명부 {agg.pax}명 기준 · 오프라인 추가인원 여권 상태 미집계</span>
                   <Stat color="emerald" label="여권 완료" value={agg.passportDone} />
                   <Stat color="orange" label="미제출" value={agg.passportPending} />
-                  <Stat color="sky" label="계약금" value={agg.contractCount} />
+                  <Stat color="sky" label="계약금" unit="팀" value={agg.contractCount} />
                 </div>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => toggleHidden(v)}
+                    disabled={togglingId === v.id}
+                    className={`rounded-md border px-3 py-1.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold disabled:opacity-50 ${
+                      v.hidden ? "border-[#1E4D8B]/30 text-[#1E4D8B] hover:bg-[#1E4D8B]/5" : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {v.hidden ? "홈페이지 노출" : "홈페이지 숨김"}
+                  </button>
                   <button
                     onClick={() => openEdit(v)}
                     className="rounded-md border border-slate-300 px-3 py-1.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-slate-600 hover:bg-slate-50"
@@ -350,7 +386,8 @@ export default function VoyageManager() {
         <VoyageForm
           mode={dialog.mode}
           initial={dialog.src}
-          liveReservedCount={dialog.src ? aggregateForVoyage(reservations, dialog.src.id).reservedCount : 0}
+          liveTeamCount={dialog.src ? aggregateForVoyage(reservations, dialog.src.id).reservedCount : 0}
+          liveBookedPax={dialog.src ? aggregateForVoyage(reservations, dialog.src.id).pax : 0}
           onClose={() => setDialog(null)}
           onSaved={() => setDialog(null)}
         />
@@ -362,13 +399,15 @@ export default function VoyageManager() {
 function VoyageForm({
   mode,
   initial,
-  liveReservedCount,
+  liveBookedPax,
+  liveTeamCount,
   onClose,
   onSaved,
 }: {
   mode: "new" | "edit";
   initial?: Voyage;
-  liveReservedCount: number;
+  liveBookedPax: number;
+  liveTeamCount: number;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -386,6 +425,8 @@ function VoyageForm({
           days: initial.days,
           priceFrom: initial.priceFrom,
           statusManual: initial.statusManual,
+          capacity: initial.capacity,
+          offlineHold: initial.offlineHold,
           countries: initial.countries ?? [],
           itinerary: initial.itinerary ?? [],
           thumbnail: initial.thumbnail,
@@ -412,6 +453,7 @@ function VoyageForm({
         }
       : empty,
   );
+  const totals = reservationTotals(f, liveBookedPax);
   const [saving, setSaving] = useState(false);
   const { ships } = useShips(); // 선박명·선사를 선박 카드에서 선택
 
@@ -576,10 +618,48 @@ function VoyageForm({
             {f.departDate && (
               <p className="mt-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
                 자동: {computeDDay(f.departDate) < 0 ? "출발 경과" : `D-${computeDDay(f.departDate)}`} ·{" "}
-                {f.statusManual ?? computeStatus(f.departDate, liveReservedCount)}
+                {f.statusManual ?? liveStatus(f, liveBookedPax)}
                 {f.statusManual ? " (직접 지정됨)" : ""}
               </p>
             )}
+            {f.statusManual === "마감" && (
+              <p className="mt-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-[#BB4D00]">
+                ※ 상세페이지의 <b>가예약 신청</b> 버튼이 <b>예약 마감</b>으로 바뀌어 신청을 받지 않습니다.
+              </p>
+            )}
+          </Field>
+
+          {/* 정원 · 잔여 좌석 조정 */}
+          <Field label="정원 (비우면 30명)">
+            <input
+              type="number"
+              min={1}
+              className={inp}
+              value={f.capacity ?? ""}
+              onChange={(e) => set("capacity", e.target.value === "" ? undefined : Math.max(1, +e.target.value))}
+              placeholder="30"
+            />
+          </Field>
+          <Field label="전화·오프라인 예약 신청 인원">
+            <input
+              type="number"
+              min={0}
+              className={inp}
+              value={f.offlineHold ?? ""}
+              onChange={(e) => set("offlineHold", e.target.value === "" ? undefined : Math.max(0, +e.target.value))}
+              placeholder="0"
+            />
+            <p className="mt-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
+              승객명부에 아직 등록하지 않은 전화·오프라인 추가 인원입니다. 명부는 홈페이지·관리자 등록을 모두 포함합니다. 같은 인원을 명부로 등록하면 이 숫자에서 직접 빼 주세요.
+              <br />
+              예약 신청{" "}
+              <b className="text-slate-600">{totals.total}명</b>
+              {" "}(명부 {totals.registered}명 / {liveTeamCount}팀 + 오프라인 {totals.offline}명) · 잔여{" "}
+              <b className="text-slate-600">
+                {totals.remaining}명
+              </b>
+              {" "}(정원 {f.capacity ?? 30})
+            </p>
           </Field>
           <Field label="출발일">
             <DateInput
@@ -654,7 +734,7 @@ function VoyageForm({
             </div>
           </Field>
           <div className="col-span-2 rounded-lg bg-slate-50 px-3 py-2 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">
-            예약 인원·여권 완료·미제출·계약금은 사용자의 가예약 신청 데이터에서 자동 집계됩니다.
+            총 예약 인원은 명부와 오프라인 추가 인원의 합계입니다. 여권·계약금 통계는 등록된 명부 기준이며, 오프라인 인원의 제출 상태를 추정하지 않습니다.
           </div>
           <Field label="국가 (쉼표로 구분)" full>
             <input className={inp} value={countriesRaw} onChange={(e) => setCountriesRaw(e.target.value)} placeholder="이탈리아, 프랑스, 스페인" />
@@ -928,11 +1008,11 @@ const statColor: Record<string, string> = {
   sky: "bg-sky-50 text-sky-600",
 };
 
-function Stat({ color, label, value }: { color: string; label: string; value: number }) {
+function Stat({ color, label, value, unit = "명" }: { color: string; label: string; value: number; unit?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-medium ${statColor[color]}`}>
       <span>{color === "orange" ? "⏱" : "✓"}</span>
-      {label} {value}명
+      {label} {value}{unit}
     </span>
   );
 }

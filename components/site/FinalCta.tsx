@@ -20,7 +20,7 @@ export default function FinalCta({
     { text: "지금 시작하세요", color: "navy" },
   ],
   descLines = ["전문 상담원이 출항 일정부터 객실,", "출국 준비까지 모두 안내해드립니다."],
-  image = "/cta-ship.webp",
+  image = "/cta-ship-night.webp",
   topButton,
   buttons = [
     { label: "상담문의 →", href: "#", variant: "brand", consult: true },

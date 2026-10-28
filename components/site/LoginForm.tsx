@@ -50,8 +50,11 @@ export default function LoginForm() {
         else localStorage.removeItem("miri-saved-id");
         localStorage.setItem("miri-user", member.name);
         localStorage.setItem("miri-user-id", member.id);
+        // 회원 관리에서 관리자 권한을 준 계정만 관리자 화면 진입 가능
+        if (member.isAdmin) localStorage.setItem("miri-admin", "1");
+        else localStorage.removeItem("miri-admin");
         window.dispatchEvent(new Event("miri-auth"));
-        router.push("/");
+        router.push(member.isAdmin ? "/admin" : "/");
         return;
       }
       setError("아이디 또는 비밀번호가 올바르지 않습니다.");

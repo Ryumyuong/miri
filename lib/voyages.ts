@@ -1,3 +1,4 @@
+import { reservationTotals } from "./reservation-state";
 import {
   collection,
   doc,
@@ -11,13 +12,22 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { DayPlan, ItineraryDay, ItineraryDraft, Voyage, VoyageStatus } from "./types";
+import type { AlertItem, DayPlan, ItineraryDay, ItineraryDraft, Voyage, VoyageStatus } from "./types";
 import { voyages as seedData } from "./mock-data";
 
 const COL = "voyages";
 
-/** 1척 정원(자동 마감 판정용) */
-const CAPACITY = 30;
+/** 정원 기본값 — 상품별로 지정하지 않았을 때 쓰는 값 (자동 마감 판정용) */
+export const DEFAULT_CAPACITY = 30;
+const CAPACITY = DEFAULT_CAPACITY;
+
+/** 이 상품의 잔여 좌석 = 정원 − 홈페이지 예약 인원 − 오프라인/타사 선점 좌석 */
+export function remainingSeats(
+  v: { capacity?: number; offlineHold?: number },
+  bookedPax: number,
+): number {
+  return reservationTotals(v, bookedPax).remaining;
+}
 
 /** 출항일 기준 D-day 자동 계산 (오늘 0시 기준). 출발일이 지나면 음수. */
 export function computeDDay(departDate: string): number {
@@ -26,6 +36,54 @@ export function computeDDay(departDate: string): number {
   today.setHours(0, 0, 0, 0);
   const depart = new Date(departDate + "T00:00:00");
   return Math.round((depart.getTime() - today.getTime()) / 86400000);
+}
+
+/** 출발 임박 알림을 띄우기 시작하는 시점 (출발일 기준 N일 전) */
+export const DEPARTURE_ALERT_DAYS = 100;
+
+/**
+ * 출발일 기준 100일 이내로 들어온 상품을 알림으로 생성 (저장하지 않고 계산).
+ *  D-100 당일부터 출발 전날까지 계속 표시되고, 출발일이 지나면 사라진다. 임박한 순으로 정렬.
+ *  paxOf: 상품별 예약 인원 (reservations.ts 와의 순환 import 를 피하려고 밖에서 넘겨받음)
+ */
+export function computeDepartureAlerts(voyages: Voyage[], paxOf: (voyageId: string) => number): AlertItem[] {
+  return voyages
+    .filter((v) => v.published !== false) // 임시저장 상품 제외
+    .map((v) => ({ v, d: computeDDay(v.departDate) }))
+    .filter(({ v, d }) => v.departDate && d > 0 && d <= DEPARTURE_ALERT_DAYS)
+    .sort((a, b) => a.d - b.d)
+    .map(({ v, d }) => {
+      const pax = reservationTotals(v, paxOf(v.id)).total;
+      return {
+        id: `depart-${v.id}`,
+        level: "danger" as const,
+        tag: `출발 D-${d}`,
+        message: `${v.title || v.shipName} — 예약 ${pax}명`,
+        href: `/admin/voyages/${v.id}`,
+      };
+    });
+}
+
+/** 고객 화면에 보여줄 상태 문구 — 저장값은 "마감"이지만 표기는 "예약 마감" */
+export function statusLabel(s: VoyageStatus): string {
+  return s === "마감" ? "예약 마감" : s;
+}
+
+/**
+ * 실제 신청 데이터 기준 예약 상태.
+ *  voyage 문서에 저장된 reservedCount 는 갱신이 늦어 목록 배지가 상세페이지와 어긋난다.
+ *  → 목록·카드·배지는 모두 이 함수로 계산해 상세페이지의 '예약 마감'과 항상 일치시킨다.
+ */
+export function liveStatus(
+  v: { departDate: string; statusManual?: VoyageStatus; capacity?: number; offlineHold?: number },
+  bookedPax: number,
+): VoyageStatus {
+  if (v.statusManual) return v.statusManual; // 관리자가 직접 지정한 값이 최우선
+  const dday = computeDDay(v.departDate);
+  if (dday < 0) return "마감"; // 출발일 경과
+  if (remainingSeats(v, bookedPax) <= 0) return "마감"; // 정원 마감
+  if (dday <= 14) return "출발 확정";
+  return reservationTotals(v, bookedPax).total > 0 ? "예약 중" : "예약 가능";
 }
 
 /** 출항일 + 예약 인원으로 예약 상태 자동 계산 */
@@ -64,6 +122,8 @@ function toVoyage(id: string, data: Record<string, unknown>): Voyage {
     // 직접 지정값이 있으면 사용, 없으면 자동 계산
     status: statusManual ?? computeStatus(departDate, reservedCount),
     statusManual,
+    capacity: (data.capacity as number | undefined) ?? undefined,
+    offlineHold: (data.offlineHold as number | undefined) ?? undefined,
     countries: (data.countries as string[]) ?? [],
     itinerary: (data.itinerary as string[]) ?? [],
     dayPlans: (data.dayPlans as DayPlan[] | undefined) ?? undefined,
@@ -72,6 +132,7 @@ function toVoyage(id: string, data: Record<string, unknown>): Voyage {
     itineraryDrafts: (data.itineraryDrafts as ItineraryDraft[] | undefined) ?? undefined,
     itineraryStatus: (data.itineraryStatus as "draft" | "published" | undefined) ?? undefined,
     published: (data.published as boolean | undefined) ?? undefined,
+    hidden: (data.hidden as boolean | undefined) ?? undefined,
     dDay: computeDDay(departDate),
     reservedCount,
     passportDone: (data.passportDone as number) ?? 0,

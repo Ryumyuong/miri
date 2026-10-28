@@ -9,6 +9,7 @@ import ReviewsLive from "@/components/site/ReviewsLive";
 import SupportCenter from "@/components/site/SupportCenter";
 import FinalCta from "@/components/site/FinalCta";
 import SiteFooter from "@/components/site/SiteFooter";
+import SitePopup from "@/components/site/SitePopup";
 import { regionStories } from "@/lib/mock-data";
 
 export default function HomePage() {
@@ -45,6 +46,9 @@ export default function HomePage() {
 
       {/* 푸터 */}
       <SiteFooter />
+
+      {/* 메인 팝업 (관리자 > 팝업 관리) */}
+      <SitePopup />
     </div>
   );
 }

@@ -7,9 +7,12 @@ import type { Voyage, PortCard, DayPlan } from "@/lib/types";
 import { usePorts } from "@/lib/usePorts";
 import { relatedPortsFor } from "@/lib/ports";
 import { useReservations } from "@/lib/useReservations";
+import { paxOf, bookedPaxFor } from "@/lib/reservations";
+import { reservationTotals } from "@/lib/reservation-state";
+import { remainingSeats, liveStatus, statusLabel } from "@/lib/voyages";
 import { useVoyages } from "@/lib/useVoyages";
 import { useShips } from "@/lib/useShips";
-import { siblingsOf, isPastVoyage, groupKey } from "@/lib/voyage-group";
+import { siblingsOf, isPastVoyage, groupKey, publishedVoyages } from "@/lib/voyage-group";
 import { DEFAULT_INCLUDED, DEFAULT_EXCLUDED } from "@/lib/voyage-defaults";
 import { useReviews } from "@/lib/useReviews";
 import ReservationForm from "@/components/site/ReservationForm";
@@ -21,6 +24,7 @@ import ItineraryView from "@/components/site/ItineraryView";
 import SpecialTerms from "@/components/site/SpecialTerms";
 import VideoGallery from "@/components/site/VideoGallery";
 import ProductGallery from "@/components/site/ProductGallery";
+import PortImages from "@/components/site/PortImages";
 import { SHOW_VIDEO_SECTION, VIDEO_TAB } from "@/lib/features";
 import PrintSheet from "@/components/site/PrintSheet";
 import TravelPrep from "@/components/site/TravelPrep";
@@ -138,21 +142,25 @@ export default function CruiseBooking({
 
   // 같은 크루즈(선박+권역+기간)의 실제 출발일들을 옵션으로
   const { voyages } = useVoyages();
-  const siblings = siblingsOf(voyages, v).filter((s) => !isPastVoyage(s)); // 지난 출발일 제외
+  // 출발일 배지·잔여인원 계산에 필요 — allOptions 보다 반드시 먼저 선언되어야 한다
+  const { reservations } = useReservations();
+  // 지난 출발일·임시저장(미발행) 출발일 제외 — 안 빼면 공개 상품 상세의 출발일 선택에 임시저장 일정이 섞여 노출된다
+  const siblings = siblingsOf(publishedVoyages(voyages), v).filter((s) => !isPastVoyage(s));
   const list = siblings.length ? siblings : [v];
   const allOptions: DateOption[] = list.map((s) => ({
     voyage: s,
     date: s.departDate,
     arrive: s.arriveDate,
-    status: s.status,
+    // 출발일 버튼 배지도 실제 신청 인원·정원 기준으로 (저장된 status 는 갱신이 늦다)
+    status: liveStatus(s, bookedPaxFor(reservations, s.id)),
     // 상품가(성인 1인 기준) = 내측 지정가 우선, 없으면 priceFrom (예약 페이지 내측과 일치)
     price: s.roomPrices?.["내측"] ?? s.priceFrom,
     dday: s.dDay ?? 0,
     flight: s.flight || flight,
   }));
-  // 마감된 출발일은 상품선택에 노출하지 않음 (전부 마감이면 깨짐 방지로 전체 노출)
-  const openOptions = allOptions.filter((o) => o.status !== "마감");
-  const options = openOptions.length ? openOptions : allOptions;
+  // 마감된 출발일도 '예약 마감'으로 함께 노출한다.
+  //  숨기면 선택이 다른 날짜로 튀어, 제목은 12/19인데 출발일·버튼은 1/18이 되는 식으로 화면이 어긋난다.
+  const options = allOptions;
 
   // 상품 이미지·설명·특징은 선박 카드에서 관리 (없으면 기존 항차 값으로 폴백)
   const { ships } = useShips();
@@ -192,8 +200,6 @@ export default function CruiseBooking({
   const months = Array.from(new Set(options.map((o) => o.date.slice(0, 7)).filter(Boolean))).sort();
 
   const productCode = `MC-${String(index + 1).padStart(5, "0")}`;
-
-  const { reservations } = useReservations();
 
   // 검색에서 넘어오면 해당 인원, 직접 진입하면 1인으로 기본 세팅
   const searchParams = useSearchParams();
@@ -280,13 +286,24 @@ export default function CruiseBooking({
 
   const opt = options.find((o) => o.voyage.id === selId) ?? options[0];
   const monthOptions = options.filter((o) => o.date.slice(0, 7) === month);
-  // 선택된 출발일의 실제 잔여 인원
-  const remaining = Math.max(0, 30 - reservations.filter((r) => r.voyageId === opt.voyage.id).length);
-  // 출발일 경과 또는 인원 마감이면 가예약 신청 차단
+  // 잔여인원 = 정원 − 홈페이지 예약 인원(일행 포함) − 오프라인/타사 선점 좌석
+  //  ※ 예전에는 '예약 건수'를 뺐어서 4명이 한 번에 예약해도 1명만 줄었다.
+  const bookedPax = reservations
+    .filter((r) => r.voyageId === opt.voyage.id)
+    .reduce((s, r) => s + paxOf(r), 0);
+  // 접수된 예약 신청 = 홈페이지 신청 + 전화·오프라인 접수분 (확정 예약이 아니라 '신청' 기준)
+  const appliedPax = reservationTotals(opt.voyage, bookedPax).total;
+  const remaining = remainingSeats(opt.voyage, bookedPax);
+  // 출발일 경과 · 정원 마감 · 관리자가 직접 '마감' 지정 → 가예약 신청 차단
   const isPast = isPastVoyage(opt.voyage);
   const isFull = remaining <= 0;
-  const reserveBlocked = isPast || isFull;
-  const blockLabel = isPast ? "예약 마감 (출발일 경과)" : "예약 마감 (인원 마감)";
+  const manualClosed = opt.voyage.statusManual === "마감";
+  const reserveBlocked = isPast || isFull || manualClosed;
+  const blockLabel = isPast
+    ? "예약 마감 (출발일 경과)"
+    : manualClosed
+      ? "예약 마감"
+      : "예약 마감 (인원 마감)";
   const childPrice = Math.round(opt.price * 0.75);
   const total = adult * opt.price + child * childPrice;
 
@@ -368,25 +385,44 @@ export default function CruiseBooking({
                   )}
                   {monthOptions.map((o) => {
                     const on = selId === o.voyage.id;
+                    const closed = o.status === "마감"; // 마감된 출발일은 회색으로 (선택은 가능 — 일정 내용은 볼 수 있게)
                     return (
                       <button
                         key={o.voyage.id}
                         onClick={() => setSelId(o.voyage.id)}
                         className={`min-w-44 rounded-none border px-4 py-3 text-left transition ${
                           on
-                            ? "border-[#1E4D8B] bg-[#1E4D8B0d]"
-                            : "border-[#C9A961] hover:brightness-95"
+                            ? closed
+                              ? "border-slate-400 bg-slate-100"
+                              : "border-[#1E4D8B] bg-[#1E4D8B0d]"
+                            : closed
+                              ? "border-slate-200 bg-slate-50 hover:brightness-95"
+                              : "border-[#C9A961] hover:brightness-95"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <span className={`text-[min(1.056vw,20.2752px)] max-[991px]:text-[min(2.741vw,16.446px)] max-[501px]:text-[3.3288vw] font-medium ${on ? "text-[#0B2A4A]" : "text-[#C9A961]"}`}>
+                          <span
+                            className={`text-[min(1.056vw,20.2752px)] max-[991px]:text-[min(2.741vw,16.446px)] max-[501px]:text-[3.3288vw] font-medium ${
+                              closed ? "text-slate-400 line-through" : on ? "text-[#0B2A4A]" : "text-[#C9A961]"
+                            }`}
+                          >
                             {Number(o.date.slice(5, 7))}월 {Number(o.date.slice(8, 10))}일
                           </span>
-                          <span className="rounded-full bg-[#F2F4F7] px-1.5 py-0.5 text-[min(0.792vw,15.2064px)] max-[991px]:text-[min(2.0556vw,12.3336px)] max-[501px]:text-[2.4964vw] font-medium text-[#0B2A4A]">
-                            {o.status}
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-[min(0.792vw,15.2064px)] max-[991px]:text-[min(2.0556vw,12.3336px)] max-[501px]:text-[2.4964vw] font-medium ${
+                              closed ? "bg-slate-300 text-white" : "bg-[#F2F4F7] text-[#0B2A4A]"
+                            }`}
+                          >
+                            {statusLabel(o.status)}
                           </span>
                         </div>
-                        <p className="mt-1 text-[min(0.924vw,17.7408px)] max-[991px]:text-[min(2.3983vw,14.3898px)] max-[501px]:text-[2.9126vw] font-medium text-[#5A6B7E]">{o.price > 0 ? `${won(o.price)}~` : "요금문의"}</p>
+                        <p
+                          className={`mt-1 text-[min(0.924vw,17.7408px)] max-[991px]:text-[min(2.3983vw,14.3898px)] max-[501px]:text-[2.9126vw] font-medium ${
+                            closed ? "text-slate-400" : "text-[#5A6B7E]"
+                          }`}
+                        >
+                          {closed ? "예약 마감" : o.price > 0 ? `${won(o.price)}~` : "요금문의"}
+                        </p>
                       </button>
                     );
                   })}
@@ -400,6 +436,8 @@ export default function CruiseBooking({
                   <dl className="flex flex-col gap-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] [&_dd]:text-[#0B2A4A] [&_dt]:text-[#5A6B7E]">
                     <Row label="출발일" value={opt.date} />
                     <Row label="귀국일" value={opt.arrive} />
+                    {/* '예약 신청' = 홈페이지 신청 + 전화·오프라인 접수분 (모든 상품에 항상 표시) */}
+                    <Row label="예약 신청" value={`${appliedPax}명`} />
                     <Row label="잔여인원" value={`${remaining}명`} />
                   </dl>
                   <div className="flex flex-col gap-3">
@@ -594,18 +632,12 @@ export default function CruiseBooking({
                       key={p.id}
                       className="overflow-hidden rounded-xl border border-slate-200 bg-white"
                     >
-                      <div className="h-32 w-full overflow-hidden">
-                        {p.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <div
-                            className={`h-full w-full bg-gradient-to-br ${
-                              regionGradient[p.region] ?? "from-sky-400 to-blue-700"
-                            }`}
-                          />
-                        )}
-                      </div>
+                      <PortImages
+                        card={p}
+                        alt={p.name}
+                        itemClass="h-70"
+                        fallback={`bg-gradient-to-br ${regionGradient[p.region] ?? "from-sky-400 to-blue-700"}`}
+                      />
                       <div className="p-4">
                         <p className="text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-gold">{p.country}</p>
                         <p className="mt-1 text-[min(1.1vw,21.12px)] max-[991px]:text-[min(3.4262vw,20.5572px)] max-[501px]:text-[4.1609vw] font-bold text-navy">{p.name}</p>
@@ -782,7 +814,7 @@ export default function CruiseBooking({
               )}
               <ConsultButton
                 voyageTitle={v.title}
-                className="rounded-none bg-[#1E4D8B] py-3 text-center text-[min(0.88vw,16.896px)] max-[991px]:text-[min(2.741vw,16.446px)] max-[501px]:text-[3.3288vw] font-bold text-white transition hover:brightness-110"
+                className="rounded-none bg-[#1E4D8B] py-3 text-center text-[min(1.056vw,20.2752px)] max-[991px]:text-[min(2.741vw,16.446px)] max-[501px]:text-[3.3288vw] font-bold text-white transition hover:brightness-110"
               >
                 상담 문의
               </ConsultButton>

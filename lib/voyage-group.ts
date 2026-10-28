@@ -16,9 +16,14 @@ export function upcomingVoyages(list: Voyage[]): Voyage[] {
   return list.filter((v) => !isPastVoyage(v));
 }
 
-/** 발행된(공개) 상품만 — 임시저장(published===false)은 고객 화면에서 숨김 */
+/** 고객 화면에 노출되는 상품인지 — 임시저장(published===false)·홈페이지 숨김(hidden) 제외 */
+export function isPublicVoyage(v: Voyage): boolean {
+  return v.published !== false && !v.hidden;
+}
+
+/** 고객 화면에 노출되는 상품만 (임시저장·숨김 제외) */
 export function publishedVoyages(list: Voyage[]): Voyage[] {
-  return list.filter((v) => v.published !== false);
+  return list.filter(isPublicVoyage);
 }
 
 /** 같은 크루즈 판정 키: 선박 + 권역 + 박/일 (날짜만 다른 동일 상품) */

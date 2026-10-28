@@ -36,10 +36,17 @@ function toPort(id: string, data: Record<string, unknown>): PortCard {
     country: (data.country as string) ?? "",
     description: (data.description as string) ?? "",
     imageUrl: (data.imageUrl as string | undefined) ?? undefined,
+    images: (data.images as string[] | undefined) ?? undefined,
     usedByCount: (data.usedByCount as number) ?? 0,
     voyageIds: (data.voyageIds as string[]) ?? [],
     order: (data.order as number) ?? undefined,
   };
+}
+
+/** 카드 이미지 목록 — 여러 장(images)이 있으면 그걸, 없으면 옛 단일 이미지(imageUrl) */
+export function portImages(p: { images?: string[]; imageUrl?: string }): string[] {
+  if (p.images?.length) return p.images.filter(Boolean);
+  return p.imageUrl ? [p.imageUrl] : [];
 }
 
 export function subscribePorts(cb: (ports: PortCard[]) => void) {

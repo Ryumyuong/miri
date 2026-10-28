@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Reservation } from "./types";
+import { paxOf } from "./reservation-state";
 import { subscribeReservations } from "./reservations";
 
 export function useReservations() {
@@ -16,5 +17,5 @@ export function useReservations() {
     return unsub;
   }, []);
 
-  return { reservations, loading };
+  return { reservations: reservations.filter(r => paxOf(r) > 0), allReservations: reservations, loading };
 }

@@ -6,6 +6,7 @@ import type { CSSProperties } from "react";
 import type { ItineraryBlock, ItineraryDay } from "@/lib/types";
 import { BLOCK_META, BLOCK_FIELDS, BLOCK_STYLE, isRichField, ITIN_TITLE_TEXT, ITIN_BODY_TEXT } from "@/lib/itinerary-blocks";
 import { usePorts } from "@/lib/usePorts";
+import { portImages } from "@/lib/ports";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // 텍스트 블록 글자 크기 옵션 → 기준 크기(18px/16px) 대비 배율. --itin-fs 로 전달한다.
@@ -535,7 +536,9 @@ function TourBlockView({ block: b }: { block: ItineraryBlock }) {
   const name = card?.name ?? b.tourName;
   const country = card?.country ?? b.tourCountry;
   const desc = card?.description ?? b.tourDesc;
-  const image = card?.imageUrl ?? b.tourImage;
+  // 카드에 사진이 여러 장이면 전부 (없으면 일정에 저장해 둔 복사본 1장)
+  const imgs = card ? portImages(card) : b.tourImage ? [b.tourImage] : [];
+  const image = imgs[0];
 
   // 관광지 — 카드 없이 텍스트로만 표시
   if (kind === "관광지") {
@@ -555,8 +558,17 @@ function TourBlockView({ block: b }: { block: ItineraryBlock }) {
   // 기항지 — 안내 카드
   return (
     <div className="rounded-[0.5em] border border-slate-200 bg-white p-[1em]">
+      {/* 사진이 2장 이상이면 글 위에 2열로 나란히, 1장이면 기존처럼 글 왼쪽에 작게 */}
+      {imgs.length > 1 && (
+        <div className="mb-[0.8em] grid grid-cols-2 gap-[4px] max-[501px]:grid-cols-1">
+          {imgs.map((u, k) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={`${u}-${k}`} src={u} alt="" className="aspect-[4/3] w-full rounded-[0.4em] bg-white object-contain object-top" />
+          ))}
+        </div>
+      )}
       <div className="flex gap-[1em] max-[501px]:flex-col">
-        {image && (
+        {imgs.length === 1 && image && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={image} alt="" className="h-[6.5em] w-[10em] shrink-0 rounded-[0.4em] object-cover max-[501px]:w-full" />
         )}

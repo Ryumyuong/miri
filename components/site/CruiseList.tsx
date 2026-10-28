@@ -5,6 +5,9 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Voyage } from "@/lib/types";
 import { groupVoyages } from "@/lib/voyage-group";
+import { liveStatus, statusLabel } from "@/lib/voyages";
+import { bookedPaxFor } from "@/lib/reservations";
+import { useReservations } from "@/lib/useReservations";
 import { FILTER_REGION_OPTS, matchesRegion, normalizeFilterRegion } from "@/lib/region-filter";
 
 function won(n: number) {
@@ -57,6 +60,8 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
   const peopleQS = params.get("people") ? `?people=${params.get("people")}` : "";
 
   const today = new Date().toISOString().slice(0, 10);
+  // 배지·마감 판정을 상세페이지와 맞추려면 실제 신청 데이터가 필요하다
+  const { reservations } = useReservations();
   // 프라임 상품도 일반 목록에 함께 노출 (프라임 페이지 단독 노출 아님)
 
   // 등록된 상품의 출발월을 자동 생성 (지난 월 제외, 내년 이후는 'YY년 M월'로 표기)
@@ -170,6 +175,14 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
             // (같은 크루즈라도 출발일마다 요금이 달라, 그룹 최저가로 뭉뚱그리지 않는다)
             const cardPrice = v.priceFrom > 0 ? v.priceFrom : 0;
             const multi = members.length > 1;
+            // 이 카드(=이 출발일)의 실제 상태 — 상세페이지의 '예약 마감'과 같은 계산
+            const cardStatus = liveStatus(v, bookedPaxFor(reservations, v.id));
+            const cardClosed = cardStatus === "마감";
+            // '출발일 N개'는 아직 예약 가능한 날짜만 센다 (마감된 날짜는 고를 수 없으므로)
+            const openMembers = members.filter(
+              (m) => liveStatus(m, bookedPaxFor(reservations, m.id)) !== "마감",
+            );
+            const openOther = openMembers.filter((m) => m.id !== v.id).length; // 이 카드 말고 남은 선택지
             return (
             <article
               key={v.id}
@@ -192,18 +205,36 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
                     }`}
                   />
                 )}
-                {multi ? (
+                {/* 마감이면 출발일 개수보다 '예약 마감'을 우선 보여준다 (출발일 개수는 옆에 함께 표기) */}
+                {cardClosed ? (
+                  <span className="absolute left-3 top-3 flex gap-1">
+                    <span className="rounded-[4px] bg-slate-500 px-2 py-0.5 text-[min(0.7337vw,14.087px)] max-[991px]:text-[min(2.2853vw,13.7118px)] max-[501px]:text-[2.7754vw] font-semibold text-white">
+                      예약 마감
+                    </span>
+                    {openMembers.length > 0 && (
+                      <span className="rounded-[4px] bg-brand px-2 py-0.5 text-[min(0.7337vw,14.087px)] max-[991px]:text-[min(2.2853vw,13.7118px)] max-[501px]:text-[2.7754vw] font-semibold text-white">
+                        예약 가능 출발일 {openMembers.length}개
+                      </span>
+                    )}
+                  </span>
+                ) : multi && openMembers.length > 1 ? (
                   <span className="absolute left-3 top-3 rounded-[4px] bg-brand px-2 py-0.5 text-[min(0.7337vw,14.087px)] max-[991px]:text-[min(2.2853vw,13.7118px)] max-[501px]:text-[2.7754vw] font-semibold text-white">
-                    출발일 {members.length}개
+                    출발일 {openMembers.length}개
                   </span>
                 ) : (
-                  <span
-                    className={`absolute left-3 top-3 rounded-[4px] px-2 py-0.5 text-[min(0.7337vw,14.087px)] max-[991px]:text-[min(2.2853vw,13.7118px)] max-[501px]:text-[2.7754vw] font-semibold text-white ${
-                      statusBadge[v.status] ?? "bg-slate-500"
-                    }`}
-                  >
-                    {v.status}
-                  </span>
+                  // 실제 신청 인원·정원 기준으로 계산 — 상세페이지의 '예약 마감'과 항상 같은 값
+                  (() => {
+                    const st = cardStatus;
+                    return (
+                      <span
+                        className={`absolute left-3 top-3 rounded-[4px] px-2 py-0.5 text-[min(0.7337vw,14.087px)] max-[991px]:text-[min(2.2853vw,13.7118px)] max-[501px]:text-[2.7754vw] font-semibold text-white ${
+                          statusBadge[st] ?? "bg-slate-500"
+                        }`}
+                      >
+                        {statusLabel(st)}
+                      </span>
+                    );
+                  })()
                 )}
               </div>
 
@@ -227,7 +258,7 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
                         <img src="/icons/card/calendar.png" alt="" className="h-4 w-4 shrink-0 object-contain" />
                         <span>
                           {v.departDate} 출발 · {v.nights}박 {v.days}일
-                          {multi && <span className="text-brand"> · 외 {members.length - 1}개 출발일</span>}
+                          {openOther > 0 && <span className="text-brand"> · 외 {openOther}개 출발일</span>}
                         </span>
                       </span>
                     </li>
@@ -237,7 +268,14 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
 
                 <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
                   <div>
-                    {cardPrice > 0 ? (
+                    {cardClosed ? (
+                      <>
+                        <p className="text-[min(0.66vw,12.672px)] max-[991px]:text-[min(2.0556vw,12.3336px)] max-[501px]:text-[2.4964vw] text-slate-400">
+                          {openOther > 0 ? `이 출발일은 마감 · 다른 출발일 ${openOther}개 예약 가능` : "예약이 마감되었습니다"}
+                        </p>
+                        <p className="text-[min(1.4216vw,27.2947px)] max-[991px]:text-[min(4.4277vw,26.5662px)] max-[501px]:text-[5.3772vw] font-semibold text-slate-400">예약 마감</p>
+                      </>
+                    ) : cardPrice > 0 ? (
                       <>
                         <p className="text-[min(0.66vw,12.672px)] max-[991px]:text-[min(2.0556vw,12.3336px)] max-[501px]:text-[2.4964vw] text-slate-400">상품가 (성인 1인 기준)</p>
                         <p className="text-[min(1.4216vw,27.2947px)] max-[991px]:text-[min(4.4277vw,26.5662px)] max-[501px]:text-[5.3772vw] font-semibold text-[#0B2A4A]">{won(cardPrice)}~</p>
@@ -257,14 +295,18 @@ export default function CruiseList({ voyages }: { voyages: Voyage[] }) {
               {multi && (
                 <details className="group border-t border-slate-100">
                   <summary className="flex cursor-pointer list-none items-center justify-center gap-2 bg-slate-50 py-3.5 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold text-slate-600 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden">
+                    {/* 여기는 마감분까지 함께 보여주는 목록이라 전체 개수를 쓴다 */}
                     출발일 {members.length}개 전체보기
+                    {openMembers.length < members.length && (
+                      <span className="font-medium text-slate-400">(예약 가능 {openMembers.length}개)</span>
+                    )}
                     <span className="text-[1.0714em] transition group-open:rotate-180">▼</span>
                   </summary>
                   <ul className="divide-y divide-slate-100 border-t border-slate-100">
                     {members.map((m) => {
-                      const closed = m.departDate < today || m.status === "마감";
+                      const closed = liveStatus(m, bookedPaxFor(reservations, m.id)) === "마감";
                       const label = closed
-                        ? "마감"
+                        ? "예약 마감"
                         : m.priceFrom > 0
                           ? `${won(m.priceFrom)}~`
                           : "요금문의";

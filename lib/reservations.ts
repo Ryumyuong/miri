@@ -1,9 +1,12 @@
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+  collection, doc, addDoc, updateDoc, runTransaction, onSnapshot, query, orderBy,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type { Reservation, AlertItem, Voyage } from "./types";
 import { buildContractMessage, sendContractSms } from "./sms";
+
+import { activeMembers, paxOf, cancellationPatch, uniqueReservations } from "./reservation-state";
+export { paxOf } from "./reservation-state";
 
 const COL = "reservations";
 
@@ -12,9 +15,14 @@ export type ReservationInput = Omit<Reservation, "id" | "createdAt">;
 function toReservation(id: string, d: Record<string, unknown>): Reservation {
   return {
     id,
+    status: d.status === "cancelled" ? "cancelled" : "active",
+    cancelledAt: d.cancelledAt as string | undefined,
+    cancellationHistory: d.cancellationHistory as Reservation["cancellationHistory"],
     code: (d.code as string | undefined) ?? undefined,
     passengers: (d.passengers as Reservation["passengers"]) ?? undefined,
     contractSentAt: (d.contractSentAt as string | undefined) ?? undefined,
+    voyageChangeHistory: (d.voyageChangeHistory as Reservation["voyageChangeHistory"]) ?? undefined,
+    createdByAdmin: d.createdByAdmin === true || undefined,
     voyageId: (d.voyageId as string) ?? "",
     voyageTitle: (d.voyageTitle as string) ?? "",
     departDate: (d.departDate as string) ?? "",
@@ -75,7 +83,7 @@ export async function sendReservationContract(r: {
 }
 
 export async function deleteReservation(id: string) {
-  await deleteDoc(doc(db, COL, id));
+  await setReservationCancelled(id, true);
 }
 
 // ── 여권 완료 판정: 만료일이 등록되어 있으면 "완료" ──
@@ -92,19 +100,28 @@ export interface VoyageAgg {
 }
 
 /** 예약 1건의 인원수(일행 포함) */
-export function paxOf(r: Reservation): number {
-  return r.passengers?.length ?? r.headcount ?? 1;
+
+
+/** 이 상품에 홈페이지로 접수된 총 신청 인원 (일행 포함) */
+export function bookedPaxFor(reservations: Reservation[], voyageId: string): number {
+  return uniqueReservations(reservations).filter((r) => r.voyageId === voyageId).reduce((s, r) => s + paxOf(r), 0);
 }
 
 /** 특정 운항 일정의 예약 지표를 실제 신청 데이터에서 집계 */
 export function aggregateForVoyage(reservations: Reservation[], voyageId: string): VoyageAgg {
-  const list = reservations.filter((r) => r.voyageId === voyageId);
-  const passportDone = list.filter(hasPassport).length;
+  const list = uniqueReservations(reservations).filter((r) => r.voyageId === voyageId && paxOf(r) > 0);
+  // 여권 제출은 '팀'이 아니라 '사람' 기준으로 센다.
+  // 대표자만 보고 세면 4명 예약이 1명으로 잡혀 미제출 수가 실제보다 적게 나온다.
+  const pax = list.reduce((s, r) => s + paxOf(r), 0);
+  const passportDone = list.reduce(
+    (s, r) => s + activeMembers(r).filter((p) => !!p.passportExpiry).length,
+    0,
+  );
   return {
     reservedCount: list.length,
-    pax: list.reduce((s, r) => s + paxOf(r), 0),
+    pax,
     passportDone,
-    passportPending: list.length - passportDone,
+    passportPending: pax - passportDone,
     contractCount: list.filter((r) => r.contractPaid).length,
   };
 }
@@ -122,19 +139,28 @@ export function expiresWithin6MonthsOfArrival(passportExpiry: string, arriveDate
 export function computePassportAlerts(reservations: Reservation[]): AlertItem[] {
   const out: AlertItem[] = [];
   for (const r of reservations) {
-    if (!hasPassport(r)) {
+    if (!paxOf(r)) continue;
+    // 클릭 시 해당 상품의 예약 목록으로 이동하면서 그 승객의 정보 입력창을 바로 연다
+    const href = `/admin/voyages/${r.voyageId}?resv=${r.id}`;
+    // 대표자만이 아니라 일행 전원 기준으로 미제출 인원을 센다
+    const pax = paxOf(r);
+    const done = activeMembers(r).filter((p) => !!p.passportExpiry).length;
+    const missing = pax - done;
+    if (missing > 0) {
       out.push({
         id: `pp-missing-${r.id}`,
         level: "warning",
         tag: "미제출",
-        message: `${r.name} 고객 - 여권 정보 미제출`,
+        message: `${r.name} 고객 - 여권 정보 미제출${pax > 1 ? ` (${missing}/${pax}명)` : ""}`,
+        href,
       });
-    } else if (expiresWithin6MonthsOfArrival(r.passportExpiry!, r.arriveDate)) {
+    } else if (activeMembers(r).some(p => !!p.passportExpiry && expiresWithin6MonthsOfArrival(p.passportExpiry, r.arriveDate))) {
       out.push({
         id: `pp-expiry-${r.id}`,
         level: "danger",
         tag: "여권 만료",
         message: `${r.name} 고객 - 여권 만료 6개월 미만`,
+        href,
       });
     }
   }
@@ -176,3 +202,81 @@ export async function seedReservationsForVoyage(v: Voyage): Promise<number> {
 function clean<T extends Record<string, unknown>>(obj: T) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
+
+/** Soft cancellation preserves passenger and contact data. Transaction retries are idempotent. */
+export async function setReservationCancelled(id: string, cancelled: boolean) {
+  const ref = doc(db, COL, id);
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("예약을 찾을 수 없습니다.");
+    const r = toReservation(id, snap.data());
+    if ((r.status === "cancelled") === cancelled) return;
+    tx.update(ref, cancellationPatch(r, cancelled, new Date().toISOString()));
+  });
+}
+
+/** 키 순서와 무관한 JSON — 로컬 캐시(입력 순서)와 서버 응답(정렬 순서)의 키 순서가 달라도 같은 값으로 본다 */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(x => stableJson(x ?? null)).join(",")}]`;
+  if (v && typeof v === "object")
+    return `{${Object.keys(v).sort()
+      .filter(k => (v as Record<string, unknown>)[k] !== undefined)
+      .map(k => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v) ?? "null";
+}
+
+/** 상품에 등록된 객실타입별 요금 — 객실타입 요금이 없으면 최저가 */
+export function registeredPrice(v: Voyage, roomType?: string): number | undefined {
+  const byRoom = roomType ? v.roomPrices?.[roomType] : undefined;
+  return byRoom || v.priceFrom || undefined;
+}
+
+/**
+ * 예약을 다른 운항 일정(같은 상품의 다른 출발일 또는 다른 상품)으로 이동. 예약코드·승객·여권·계약 상태는 유지.
+ * 상품가가 원래 일정의 등록 요금 그대로인 승객만 새 일정 요금으로 바꾸고, 직접 고친 금액은 둔다.
+ */
+export async function changeReservationVoyage(original: Reservation, from: Voyage, to: Voyage) {
+  const ref = doc(db, COL, original.id);
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("예약을 찾을 수 없습니다.");
+    const latest = toReservation(original.id, snap.data());
+    if (latest.voyageId !== from.id || latest.status === "cancelled")
+      throw new Error("이 창을 연 뒤에 예약이 다른 곳에서 변경되었습니다.\n새로고침 후 다시 시도해 주세요.");
+    const passengers = latest.passengers?.map(p =>
+      p.productPrice == null || p.productPrice === registeredPrice(from, p.roomType)
+        ? clean({ ...p, productPrice: registeredPrice(to, p.roomType) }) as unknown as typeof p
+        : p,
+    );
+    const at = new Date().toISOString();
+    tx.update(ref, clean({
+      voyageId: to.id,
+      voyageTitle: to.title,
+      departDate: to.departDate,
+      arriveDate: to.arriveDate,
+      passengers,
+      voyageChangeHistory: [
+        ...(latest.voyageChangeHistory ?? []),
+        {
+          at,
+          fromVoyageId: from.id, fromVoyageTitle: latest.voyageTitle, fromDepartDate: latest.departDate,
+          toVoyageId: to.id, toVoyageTitle: to.title, toDepartDate: to.departDate,
+        },
+      ],
+    }));
+  });
+}
+
+/** Refuse stale edits rather than overwriting another operator's passenger/cancellation changes. */
+export async function saveReservationPassengers(original: Reservation, passengers: Reservation["passengers"]) {
+  const ref = doc(db, COL, original.id);
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("예약을 찾을 수 없습니다.");
+    const latest = toReservation(original.id, snap.data());
+    if (stableJson(latest.passengers) !== stableJson(original.passengers) || latest.status === "cancelled")
+      throw new Error("이 창을 연 뒤에 다른 곳에서 예약 정보가 먼저 수정되었습니다.\n창을 닫고 다시 열어 최신 내용을 확인한 뒤 입력해 주세요.");
+    tx.update(ref, { passengers });
+  });
+}
+

@@ -96,11 +96,13 @@ export default function ItineraryAdminPage() {
                     {v.code ?? "코드 미지정"} · {v.shipName} · 출항 {v.departDate} ·{" "}
                     {dayCount > 0 ? (
                       <span className="font-semibold text-[#1E4D8B]">
-                        일정 {dayCount}일차 {v.itineraryStatus === "published" ? "· 발행됨" : "· 임시저장(미노출)"}
+                        {/* 홈페이지 숨김이면 '발행됨' 대신 숨김만 (둘이 같이 뜨면 모순돼 보임) */}
+                        일정 {dayCount}일차 {v.hidden ? "" : v.itineraryStatus === "published" ? "· 발행됨" : "· 임시저장(미노출)"}
                       </span>
                     ) : (
                       <span className="text-slate-400">일정 미작성</span>
                     )}
+                    {v.hidden && <span className="font-semibold text-slate-500"> · 홈페이지 숨김</span>}
                   </p>
                 </div>
                 <Link

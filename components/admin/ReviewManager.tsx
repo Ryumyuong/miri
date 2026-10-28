@@ -6,6 +6,8 @@ import { deleteReview, updateReview } from "@/lib/reviews";
 import type { Review } from "@/lib/types";
 import ReviewGallery from "@/components/site/ReviewGallery";
 import { matchesReviewCategory } from "@/lib/region-filter";
+import { useVoyages } from "@/lib/useVoyages";
+import { groupVoyages } from "@/lib/voyage-group";
 
 const CATEGORIES = ["전체", "유럽", "미주·알래스카", "중동", "동남아/동북아"];
 
@@ -14,6 +16,40 @@ export default function ReviewManager() {
   const [cat, setCat] = useState("전체");
   const [viewing, setViewing] = useState<Review | null>(null);
   const [moving, setMoving] = useState(false);
+
+  // 후기의 '여행지(연결 상품)' 변경 — 지난 출발일까지 전부 후보로 둔다 (다녀온 여행에 쓰는 글이므로)
+  const { voyages } = useVoyages();
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const reviewVoyageGroups = groupVoyages(voyages).sort((a, b) =>
+    b.rep.departDate.localeCompare(a.rep.departDate),
+  );
+  const [voyagePick, setVoyagePick] = useState("");
+  const [savingVoyage, setSavingVoyage] = useState(false);
+
+  const openReview = (r: Review) => {
+    setVoyagePick(r.voyageId ?? "");
+    setViewing(r);
+  };
+
+  const saveVoyage = async () => {
+    if (!viewing) return;
+    const v = voyages.find((x) => x.id === voyagePick);
+    setSavingVoyage(true);
+    try {
+      // 상품을 바꾸면 목록·필터에 쓰이는 지역·선박·카테고리 표기도 함께 맞춘다 (고객 작성 폼과 동일).
+      // '연결 안 함'은 빈 문자열로 저장한다 — undefined 로 넘기면 저장 단계에서 걸러져 값이 안 지워진다.
+      // 지역·선박·카테고리는 후기 목록 필터에 쓰이므로 연결만 끊고 그대로 둔다.
+      const patch: Partial<Review> = v
+        ? { voyageId: v.id, travelDest: v.title, region: v.region, ship: v.shipName, category: v.region }
+        : { voyageId: "", travelDest: "" };
+      await updateReview(viewing.id, patch);
+      setViewing({ ...viewing, ...patch } as Review);
+    } catch (e) {
+      alert("여행지 변경 실패: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setSavingVoyage(false);
+    }
+  };
 
   const shown = cat === "전체" ? reviews : reviews.filter((r) => matchesReviewCategory(r.category, cat));
 
@@ -129,7 +165,7 @@ export default function ReviewManager() {
                   <td className="whitespace-nowrap px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <button
-                        onClick={() => setViewing(r)}
+                        onClick={() => openReview(r)}
                         className="whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-[0.9em] font-semibold text-slate-600 transition hover:bg-slate-50"
                       >
                         👁 보기
@@ -172,6 +208,46 @@ export default function ReviewManager() {
                   {viewing.travelDest && `여행지 ${viewing.travelDest}`}
                 </p>
               )}
+
+              {/* 여행지(연결 상품) 수정 — 고객이 못 골랐거나 잘못 고른 후기를 관리자가 바로잡는다.
+                  지난 출발일도 모두 나오며, 저장 시 지역·선박·카테고리 표기도 함께 갱신된다. */}
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <label className="mb-1.5 block text-[13px] font-semibold text-slate-500">
+                  여행지 (연결 상품)
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={voyagePick}
+                    onChange={(e) => setVoyagePick(e.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[14px] text-slate-700 outline-none focus:border-[#1E4D8B]"
+                  >
+                    <option value="">연결 안 함</option>
+                    {reviewVoyageGroups.map((g) => (
+                      <option key={g.rep.id} value={g.rep.id}>
+                        {g.rep.departDate} · {g.rep.title}
+                        {g.rep.departDate < todayISO ? " (다녀온 일정)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={saveVoyage}
+                    // 연결을 끊는 경우도 저장할 게 있다 (여행지 표기가 남아 있으면 지워야 함)
+                    disabled={
+                      savingVoyage ||
+                      (voyagePick === (viewing.voyageId ?? "") &&
+                        !(voyagePick === "" && !!viewing.travelDest))
+                    }
+                    className="shrink-0 rounded-lg bg-[#1E4D8B] px-4 py-2 text-[14px] font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+                  >
+                    {savingVoyage ? "저장 중…" : "저장"}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[12px] text-slate-400">
+                  현재 연결: {viewing.travelDest || viewing.voyageId || "없음"}
+                  {!viewing.voyageId && viewing.travelDest && " (상품 연결 없이 이름만 저장된 후기)"}
+                </p>
+              </div>
 
               <p className="mt-4 whitespace-pre-line text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] leading-relaxed text-slate-700">{viewing.content || "내용이 없습니다."}</p>
 

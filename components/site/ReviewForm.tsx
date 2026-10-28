@@ -5,7 +5,7 @@ import type { Voyage, Review } from "@/lib/types";
 import { addReview, updateReview } from "@/lib/reviews";
 import ImageUploader from "@/components/ImageUploader";
 import { useVoyages } from "@/lib/useVoyages";
-import { groupVoyages, upcomingVoyages } from "@/lib/voyage-group";
+import { groupVoyages } from "@/lib/voyage-group";
 
 export default function ReviewForm({
   voyage,
@@ -21,11 +21,12 @@ export default function ReviewForm({
   const [travelDate, setTravelDate] = useState(initial?.travelDate ?? "");
   const [voyageId, setVoyageId] = useState(initial?.voyageId ?? voyage?.id ?? "");
   const { voyages } = useVoyages();
-  // 크루즈 일정/예약 페이지와 동일하게 상품 묶음(그룹) 단위로 선택
-  const groups = groupVoyages(upcomingVoyages(voyages)).sort((a, b) =>
-    (a.rep.region + a.rep.title).localeCompare(b.rep.region + b.rep.title),
-  );
+  // 후기는 '다녀온 여행'에 대해 쓰는 것이라 지난 출발일도 반드시 고를 수 있어야 한다.
+  // (예전에는 upcomingVoyages 로 걸러서, 다녀온 상품이 목록에 없어 선택 자체가 불가능했다)
+  // 최근 출발일이 위로 오도록 정렬 — 방금 다녀온 상품을 먼저 찾게 된다.
+  const groups = groupVoyages(voyages).sort((a, b) => b.rep.departDate.localeCompare(a.rep.departDate));
   const selectedVoyage = voyages.find((v) => v.id === voyageId) ?? voyage;
+  const today = new Date().toISOString().slice(0, 10);
   const groupsByRegion = groups.reduce<Record<string, typeof groups>>((acc, g) => {
     (acc[g.rep.region] ??= []).push(g);
     return acc;
@@ -127,7 +128,10 @@ export default function ReviewForm({
               {Object.entries(groupsByRegion).map(([region, gs]) => (
                 <optgroup key={region} label={region}>
                   {gs.map((g) => (
-                    <option key={g.rep.id} value={g.rep.id}>{g.rep.title}</option>
+                    <option key={g.rep.id} value={g.rep.id}>
+                      {g.rep.title}
+                      {g.rep.departDate < today ? " (다녀온 일정)" : ""}
+                    </option>
                   ))}
                 </optgroup>
               ))}

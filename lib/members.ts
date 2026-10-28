@@ -29,6 +29,7 @@ export type Member = {
   passportExpiry?: string;
   passportImage?: string;
   createdAt?: number; // 가입 시각 (ms epoch)
+  isAdmin?: boolean; // 관리자 페이지 접근 권한 (회원 관리에서 지정)
 };
 
 function toMember(id: string, d: Record<string, unknown>): Member {
@@ -51,7 +52,13 @@ function toMember(id: string, d: Record<string, unknown>): Member {
     passportExpiry: s("passportExpiry"),
     passportImage: s("passportImage"),
     createdAt: (d.createdAt as number | undefined) ?? undefined,
+    isAdmin: (d.isAdmin as boolean | undefined) ?? undefined,
   };
+}
+
+/** 관리자 권한 지정/해제 (회원 관리에서 사용) */
+export async function setMemberAdmin(id: string, isAdmin: boolean): Promise<void> {
+  await setDoc(doc(db, COL, id), { isAdmin }, { merge: true });
 }
 
 /** 회원 단건 조회 (없으면 null). */

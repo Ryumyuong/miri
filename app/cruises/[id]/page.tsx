@@ -12,7 +12,9 @@ import PhoneConsult from "@/components/site/PhoneConsult";
 import ConsultButton from "@/components/site/ConsultButton";
 import { useVoyages } from "@/lib/useVoyages";
 import { useReservations } from "@/lib/useReservations";
-import { isPastVoyage } from "@/lib/voyage-group";
+import { isPastVoyage, isPublicVoyage } from "@/lib/voyage-group";
+import { paxOf, bookedPaxFor } from "@/lib/reservations";
+import { remainingSeats, liveStatus, statusLabel } from "@/lib/voyages";
 
 const regionGradient: Record<string, string> = {
   "미주·알래스카": "from-cyan-300 to-sky-600",
@@ -42,7 +44,8 @@ export default function CruiseDetailPage() {
   const [showActions, setShowActions] = useState(false); // 모바일: 상세보기 클릭 시 액션 버튼 2x2 펼침
 
   const index = voyages.findIndex((x) => x.id === id);
-  const v = voyages[index];
+  // 임시저장·홈페이지 숨김 상품은 URL로 직접 들어와도 고객에게 보이지 않게 '찾을 수 없음' 처리
+  const v = voyages[index] && isPublicVoyage(voyages[index]) ? voyages[index] : undefined;
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F5F7F9]">
@@ -76,9 +79,14 @@ export default function CruiseDetailPage() {
                   ) : (
                     <div className={`h-full w-full bg-gradient-to-br ${regionGradient[v.region] ?? "from-sky-400 to-blue-700"}`} />
                   )}
-                  <span className={`absolute left-4 top-4 rounded-md px-3 py-1 text-[min(1.0588vw,20.329px)] max-[991px]:text-[min(3.2977vw,19.7862px)] max-[501px]:text-[4.0048vw] font-semibold text-white ${statusBadge[v.status] ?? "bg-slate-500"}`}>
-                    {v.status}
-                  </span>
+                  {(() => {
+                    const st = liveStatus(v, bookedPaxFor(reservations, v.id));
+                    return (
+                      <span className={`absolute left-4 top-4 rounded-md px-3 py-1 text-[min(1.0588vw,20.329px)] max-[991px]:text-[min(3.2977vw,19.7862px)] max-[501px]:text-[4.0048vw] font-semibold text-white ${statusBadge[st] ?? "bg-slate-500"}`}>
+                        {statusLabel(st)}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex min-w-0 flex-1 flex-col max-[991px]:px-[32px]">
@@ -127,9 +135,18 @@ export default function CruiseDetailPage() {
                   <div className="mb-6 mt-auto border-t-[1.44px] border-black/10" />
 
                   {(() => {
-                    const reserved = reservations.filter((r) => r.voyageId === v.id).length;
-                    const reserveBlocked = isPastVoyage(v) || reserved >= 30;
-                    const blockLabel = isPastVoyage(v) ? "예약 마감 (출발일 경과)" : "예약 마감 (인원 마감)";
+                    // 상세 상단 버튼줄도 아래 '상품선택'과 같은 기준으로 막는다
+                    //  (예약 건수가 아니라 일행 포함 인원 · 정원 · 오프라인 신청 · 수동 마감 반영)
+                    const bookedPax = reservations
+                      .filter((r) => r.voyageId === v.id)
+                      .reduce((s, r) => s + paxOf(r), 0);
+                    const manualClosed = v.statusManual === "마감";
+                    const reserveBlocked = isPastVoyage(v) || manualClosed || remainingSeats(v, bookedPax) <= 0;
+                    const blockLabel = isPastVoyage(v)
+                      ? "예약 마감 (출발일 경과)"
+                      : manualClosed
+                        ? "예약 마감"
+                        : "예약 마감 (인원 마감)";
                     const actionBtns = (
                       <>
                         {reserveBlocked ? (

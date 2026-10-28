@@ -17,7 +17,7 @@ export default function FaqPage() {
           <p className="text-[min(1.1vw,21.12px)] max-[991px]:text-[min(3.4262vw,20.5572px)] max-[501px]:text-[3.5vw] font-bold tracking-[0.43em] text-[#DBBA5D]">FAQ</p>
           <h1 className="mt-3 text-[min(2.75vw,52.8px)] max-[991px]:text-[min(8.5653vw,51.3918px)] max-[501px]:text-[8.6vw] font-extrabold tracking-tight text-black">자주 묻는 질문</h1>
           <p className="mt-4 text-[min(1.1vw,21.12px)] max-[991px]:text-[min(3.4262vw,20.5572px)] max-[501px]:text-[3.97vw] font-medium leading-relaxed text-[#242424]">
-            크루즈 여행에 대한 궁금증을 해결해드립니다
+            크루즈 선내생활 Q&amp;A
           </p>
         </div>
 

@@ -1,3 +1,4 @@
+import { activeMembers } from "./reservation-state";
 import type { Passenger, Reservation } from "./types";
 
 /** 만나이 계산 (생년월일 YYYY-MM-DD 기준). 기준일 미지정 시 오늘. */
@@ -25,6 +26,7 @@ const HEADERS = [
   "주민번호뒷",
   "성별",
   "객실타입",
+  "루밍",
   "만나이",
   "생년월일",
   "여권번호",
@@ -42,23 +44,11 @@ const esc = (v: unknown) => {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-// 신규 passengers 가 없는 레거시 예약은 기존 필드로 1행 생성
-function legacyPassenger(r: Reservation): Passenger {
-  return {
-    id: r.id,
-    nameKo: r.name,
-    roomType: r.room,
-    passportNumber: r.passportNumber,
-    passportExpiry: r.passportExpiry,
-    phone: r.phone,
-  };
-}
-
 /** 예약 목록 → CSV 문자열 (승객 1명 = 1행). Excel 한글 대응 BOM 포함. */
 export function reservationsToCsv(reservations: Reservation[]): string {
   const rows: string[][] = [HEADERS];
   reservations.forEach((r, gi) => {
-    const ps = r.passengers && r.passengers.length ? r.passengers : [legacyPassenger(r)];
+    const ps = activeMembers(r);
     ps.forEach((p, pi) => {
       rows.push([
         String(gi + 1), // 일행번호 (같은 예약=같은 일행)
@@ -72,6 +62,7 @@ export function reservationsToCsv(reservations: Reservation[]): string {
         p.rrnBack ?? "",
         p.gender ?? "",
         p.roomType ?? "",
+        p.rooming ?? "",
         koreanAge(p.birth),
         p.birth ?? "",
         p.passportNumber ?? "",

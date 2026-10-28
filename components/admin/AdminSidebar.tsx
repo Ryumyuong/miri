@@ -13,6 +13,8 @@ export const adminNav = [
   { href: "/admin/payments", label: "결제 관리", icon: "/admin-icons/payments.png" },
   { href: "/admin/consults", label: "상담 관리", icon: "/admin-icons/consults.png" },
   { href: "/admin/reviews", label: "후기 관리", icon: "/admin-icons/consults.png" },
+  { href: "/admin/notices", label: "공지사항&뉴스 관리", icon: "/admin-icons/alerts.png" },
+  { href: "/admin/popups", label: "팝업 관리", icon: "/admin-icons/alerts.png" },
   { href: "/admin/members", label: "회원 관리", icon: "/admin-icons/consults.png" },
   { href: "/admin/alerts", label: "알림 현황", icon: "/admin-icons/alerts.png" },
   { href: "/admin/settings", label: "시스템 설정", icon: "/admin-icons/settings.png" },

@@ -85,7 +85,7 @@ export default function PrimePage() {
           { text: "지금 시작하세요", color: "navy" },
         ]}
         descLines={["전문 상담원이 고객님께 가장 적합한", "프라임 일정을 제안해 드립니다"]}
-        image="/cta-ship.webp"
+        image="/cta-ship-night.webp"
         buttons={[
           { label: "전문 상담 신청 →", href: "/faq", variant: "brand" },
           { label: "전체 일정 보기 →", href: "/cruises", variant: "navyDark" },

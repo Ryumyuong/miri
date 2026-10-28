@@ -158,6 +158,22 @@ export default function ItineraryEditor({ voyage }: { voyage: Voyage }) {
   };
   const [active, setActive] = useState(0);
   const [saving, setSaving] = useState(false);
+  // 홈페이지 숨김 — 상품을 삭제·임시저장 없이 고객 화면에서만 내리거나 다시 올린다 (관리자 화면엔 그대로)
+  const [togglingHidden, setTogglingHidden] = useState(false);
+  const toggleHidden = async () => {
+    const msg = voyage.hidden
+      ? "이 상품을 홈페이지에 다시 노출할까요?"
+      : "이 상품을 홈페이지에서 숨길까요?\n관리자 화면에는 그대로 남고, 언제든 다시 노출할 수 있습니다.";
+    if (!confirm(msg)) return;
+    setTogglingHidden(true);
+    try {
+      await updateVoyage(voyage.id, { hidden: !voyage.hidden });
+    } catch (e) {
+      alert("변경 실패: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setTogglingHidden(false);
+    }
+  };
   const [savingKind, setSavingKind] = useState<null | "draft" | "published">(null); // 어느 버튼을 저장 중인지
   const [savedAt, setSavedAt] = useState<string>("");
   const [addAt, setAddAt] = useState<number | null>(null); // 블록 삽입 위치 인덱스 (null=닫힘)
@@ -430,6 +446,16 @@ export default function ItineraryEditor({ voyage }: { voyage: Voyage }) {
           </button>
           <button
             onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleHidden}
+            disabled={togglingHidden}
+            className={`rounded-lg border bg-white px-4 py-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold transition disabled:opacity-50 ${
+              voyage.hidden ? "border-[#1E4D8B]/30 text-[#1E4D8B] hover:bg-[#1E4D8B]/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {voyage.hidden ? "홈페이지 노출" : "홈페이지 숨김"}
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => save("draft")}
             disabled={saving}
             className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
@@ -458,7 +484,10 @@ export default function ItineraryEditor({ voyage }: { voyage: Voyage }) {
       <div className="mb-6">
         <h1 className="flex flex-wrap items-center gap-2 text-[min(1.65vw,31.68px)] max-[991px]:text-[min(5.1393vw,30.8358px)] max-[501px]:text-[6.2414vw] font-extrabold text-navy">
           여행 일정 작성
-          {voyage.itineraryStatus === "published" ? (
+          {/* 홈페이지 숨김이면 '노출 중' 배지 대신 숨김 배지만 (둘이 같이 뜨면 모순돼 보임) */}
+          {voyage.hidden ? (
+            <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[0.4308em] font-semibold text-slate-600">🚫 홈페이지 숨김</span>
+          ) : voyage.itineraryStatus === "published" ? (
             <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[0.4308em] font-semibold text-emerald-700">🟢 발행본 노출 중</span>
           ) : (
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[0.4308em] font-semibold text-slate-500">⚪ 미발행</span>

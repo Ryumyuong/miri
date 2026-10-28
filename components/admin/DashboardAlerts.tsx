@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useAlerts } from "@/lib/useAlerts";
 import { useReservations } from "@/lib/useReservations";
 import { useConsults } from "@/lib/useConsults";
-import { computePassportAlerts } from "@/lib/reservations";
+import { useVoyages } from "@/lib/useVoyages";
+import { bookedPaxFor, computePassportAlerts } from "@/lib/reservations";
+import { computeDepartureAlerts } from "@/lib/voyages";
 import { computeConsultAlerts } from "@/lib/consults";
 
 const alertStyles: Record<string, string> = {
@@ -17,9 +19,11 @@ export default function DashboardAlerts({ limit }: { limit?: number }) {
   const { alerts, loading } = useAlerts();
   const { reservations } = useReservations();
   const { consults } = useConsults();
+  const { voyages } = useVoyages();
+  const departAlerts = computeDepartureAlerts(voyages, (id) => bookedPaxFor(reservations, id));
 
-  // 새 상담문의 → 여권 상태(자동 계산) → 수동 알림 순으로 표시
-  const all = [...computeConsultAlerts(consults), ...computePassportAlerts(reservations), ...alerts];
+  // 새 상담문의 → 출발 100일 이내 상품 → 여권 상태(자동 계산) → 수동 알림 순으로 표시
+  const all = [...computeConsultAlerts(consults), ...departAlerts, ...computePassportAlerts(reservations), ...alerts];
   const shown = limit ? all.slice(0, limit) : all;
 
   return (

@@ -1,0 +1,17 @@
+{
+  "version": "20261016-reservation-cancellation",
+  "database": "Firestore",
+  "collection": "reservations",
+  "requiredBackfill": false,
+  "requiredIndexes": [],
+  "optionalFields": {
+    "status": "active | cancelled; absent means active",
+    "cancelledAt": "last cancellation ISO timestamp, retained after restore",
+    "cancellationHistory": "array of {action: cancel | restore, at: ISO timestamp}",
+    "passengers[].status": "active | cancelled; absent means active",
+    "passengers[].cancelledAt": "last cancellation ISO timestamp",
+    "passengers[].cancellationHistory": "array of {action: cancel | restore, at: ISO timestamp}"
+  },
+  "operation": "NO DATABASE WRITE REQUIRED; optional fields are written on future user actions only",
+  "pastHardDeletes": "No fabricated records; recovery requires a verified backup"
+}

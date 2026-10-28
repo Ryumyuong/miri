@@ -25,7 +25,7 @@ const NAV: NavItem[] = [
     active: false,
     href: "/about",
     children: [
-      { label: "회사소개", href: "/about" },
+      { label: "미리크루즈 이용안내", href: "/about" },
       { label: "The Prime", href: "/prime" },
     ],
   },
@@ -49,8 +49,9 @@ const NAV: NavItem[] = [
     label: "고객센터",
     caret: true,
     active: false,
-    href: "/faq",
+    href: "/notice",
     children: [
+      { label: "공지사항&뉴스", href: "/notice" },
       { label: "자주묻는질문", href: "/faq" },
       { label: "예약조회", href: "/reservation" },
     ],

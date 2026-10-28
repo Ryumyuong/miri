@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { PortCard, PortKind, Voyage } from "@/lib/types";
 import { usePorts } from "@/lib/usePorts";
 import { useVoyages } from "@/lib/useVoyages";
-import { addPort, updatePort, deletePort, seedPorts, type PortInput } from "@/lib/ports";
+import { addPort, updatePort, deletePort, seedPorts, portImages, type PortInput } from "@/lib/ports";
+import PortImages from "@/components/site/PortImages";
 import { groupVoyages, groupKey } from "@/lib/voyage-group";
 import { ASIA_REGIONS } from "@/lib/region-filter";
 import ImageUploader from "@/components/ImageUploader";
@@ -207,13 +208,13 @@ export default function PortManager() {
             <div className="grid grid-cols-3 gap-5 max-[991px]:grid-cols-2 max-[501px]:grid-cols-1">
               {items.map(({ card: p, regionCards, idx }) => (
                 <div key={p.id} className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-                  <div className="relative h-36 w-full overflow-hidden">
-                    {p.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={p.imageUrl} alt={p.name} loading="lazy" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className={`h-full w-full bg-gradient-to-br ${regionGradient[p.region] ?? "from-sky-400 to-blue-700"}`} />
-                    )}
+                  <div className="relative w-full">
+                    <PortImages
+                      card={p}
+                      alt={p.name}
+                      itemClass="h-70"
+                      fallback={`bg-gradient-to-br ${regionGradient[p.region] ?? "from-sky-400 to-blue-700"}`}
+                    />
                     <span className="absolute right-3 top-3 rounded-md bg-black/55 px-2.5 py-1 text-[min(0.605vw,11.616px)] max-[991px]:text-[min(1.8843vw,11.3058px)] max-[501px]:text-[2.2884vw] font-semibold text-white backdrop-blur">
                       {productCount(voyages, p.voyageIds)}개 상품에 사용 중
                     </span>
@@ -282,6 +283,7 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
           country: initial.country,
           description: initial.description,
           imageUrl: initial.imageUrl,
+          images: portImages(initial), // 옛 단일 이미지 카드도 여러 장 목록으로 이어받는다
           usedByCount: initial.usedByCount,
           voyageIds: initial.voyageIds ?? [],
         }
@@ -389,10 +391,12 @@ function PortForm({ initial, defaultKind, voyages, ports, onClose }: { initial?:
               </div>
             )}
           </Field>
-          <Field label="이미지" full>
+          <Field label="이미지 (여러 장 가능 · 2장 이상이면 2열로 나란히 노출)" full>
             <ImageUploader
-              value={f.imageUrl}
-              onChange={(v) => set("imageUrl", v)}
+              multiple
+              value={f.images ?? []}
+              // 첫 장은 imageUrl 에도 넣어 둔다 — 옛 화면·데이터 호환용
+              onChange={(v) => setF((p) => ({ ...p, images: v, imageUrl: v[0] }))}
               dir="ports"
               label="관광지 이미지를 끌어다 놓거나 클릭하여 업로드"
               textClass={MODAL_TEXT}

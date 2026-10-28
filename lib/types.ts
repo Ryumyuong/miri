@@ -121,7 +121,10 @@ export interface Voyage {
   priceFrom: number; // 최저가 (원)
   roomPrices?: Record<string, number>; // 객실별 요금(내측/오션뷰/발코니/스위트) 직접 지정. 비우면 priceFrom×배수 자동계산.
   status: VoyageStatus; // 표시용 상태 (statusManual 있으면 그 값, 없으면 자동 계산)
-  statusManual?: VoyageStatus; // 관리자가 직접 지정한 상태 (없으면 자동 계산)
+  statusManual?: VoyageStatus; // 관리자가 직접 지정한 상태 (없으면 자동 계산). "마감"이면 가예약 신청도 막힌다
+  capacity?: number; // 이 상품의 판매 정원 (미설정 시 기본 30)
+  offlineHold?: number; // 전화·오프라인·타사 등 홈페이지 밖에서 접수한 예약 신청 인원
+  //  → 상세페이지의 '예약 신청 N명'에 합산되고, 잔여인원에서도 함께 차감된다
   countries?: string[]; // 방문 국가 태그
   itinerary?: string[]; // 기항지 순서
   schedule?: { date: string; place: string; arrive: string; depart: string }[]; // 일자별 상세 일정(있으면 표로 표시)
@@ -131,6 +134,7 @@ export interface Voyage {
   itineraryDaysDraft?: ItineraryDay[] | null; // 미발행 초안(관리자 편집용, 공개 안 함). 발행 시 itineraryDays로 반영하고 비움.
   itineraryDrafts?: ItineraryDraft[] | null; // 임시저장 스냅샷 목록(저장 시점별 버전, 되돌리기용)
   published?: boolean; // 운항 일정(상품) 공개 여부. false=임시저장(고객 미노출), 미설정/true=공개
+  hidden?: boolean; // 홈페이지 숨김 — 발행된 상품을 삭제·임시저장 없이 고객 화면에서만 내림 (관리자 화면엔 그대로 보임)
   dDay?: number; // 출발까지 D-day (departDate 기준 자동 계산)
   // 운영 지표
   reservedCount: number; // 예약 인원
@@ -165,7 +169,23 @@ export interface Voyage {
 /** 승객(일행) 1인 — CSV 내보내기 컬럼과 1:1 대응.
  *  주민번호 뒷자리(rrnBack)는 화면 표기는 안 해도 저장은 한다.
  *  만나이는 birth(생년월일)로 계산하므로 저장하지 않음. */
+export interface CancellationEvent { action: "cancel" | "restore"; at: string; }
+
+/** 예약 일정 변경 이력 (다른 출발일·다른 상품으로 이동) */
+export interface VoyageChangeEvent {
+  at: string;
+  fromVoyageId: string;
+  fromVoyageTitle?: string;
+  fromDepartDate: string;
+  toVoyageId: string;
+  toVoyageTitle?: string;
+  toDepartDate: string;
+}
+
 export interface Passenger {
+  status?: "active" | "cancelled";
+  cancelledAt?: string;
+  cancellationHistory?: CancellationEvent[];
   id: string;
   nameKo?: string; // 한글이름
   lastNameEn?: string; // 영문 성
@@ -187,10 +207,15 @@ export interface Passenger {
 }
 
 export interface Reservation {
+  status?: "active" | "cancelled";
+  cancelledAt?: string;
+  cancellationHistory?: CancellationEvent[];
   id: string;
   code?: string; // 예약코드 (일행 단위, 예: MC25-0001)
   passengers?: Passenger[]; // 일행 승객 목록 (신규 구조)
   contractSentAt?: string; // 여행자계약서 문자 발송 시각 (있으면 '발송됨')
+  voyageChangeHistory?: VoyageChangeEvent[]; // 일정 변경 이력
+  createdByAdmin?: boolean; // 관리자 화면에서 직접 등록한 예약 (없으면 홈페이지 고객 예약 또는 이전 데이터)
   voyageId: string;
   voyageTitle: string;
   departDate: string; // 신청 시점 스냅샷
@@ -221,7 +246,8 @@ export interface PortCard {
   region: string; // 유럽
   country: string; // 스페인
   description: string;
-  imageUrl?: string;
+  imageUrl?: string; // 대표 이미지 (= images[0]). 옛 카드 호환용으로 계속 채워 둔다
+  images?: string[]; // 카드 이미지 여러 장 — 2열로 나란히 노출
   usedByCount: number; // N개 상품에 사용 중 (= voyageIds 길이와 동기화)
   voyageIds?: string[]; // 이 카드를 관광정보에 노출할 운항 일정 id 목록 (명시적 지정)
   order?: number; // 지역 내 정렬 순서 (작을수록 앞)

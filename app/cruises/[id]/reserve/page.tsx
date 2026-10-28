@@ -7,9 +7,11 @@ import SiteHeader from "@/components/site/SiteHeader";
 import SiteFooter from "@/components/site/SiteFooter";
 import SpecialTerms from "@/components/site/SpecialTerms";
 import { useVoyages } from "@/lib/useVoyages";
+import { isPublicVoyage } from "@/lib/voyage-group";
 import { addReservation, sendReservationContract } from "@/lib/reservations";
 import { getMember, saveMemberPassport } from "@/lib/members";
 import type { Passenger } from "@/lib/types";
+import SmartInput, { phoneMask, genderFromRrn } from "@/components/SmartInput";
 
 const STEPS = ["상품 확인", "객실/인원 선택", "예약자 정보", "동반자 정보", "약관 동의", "신청 완료"];
 
@@ -26,16 +28,24 @@ const TERMS = [
   { key: "marketing", title: "마케팅 수신 동의 (선택)", desc: "여행 상품 및 이벤트 정보 수신에 동의합니다", required: false },
 ];
 
-type DetailField = { key: string; label: string; type?: "date" | "password" | "gender"; upper?: boolean; maxLength?: number };
+type DetailField = {
+  key: string;
+  label: string;
+  type?: "date" | "password" | "gender";
+  upper?: boolean;
+  maxLength?: number;
+  /** 한/영 자동 교정 — "en"이면 한글을 알파벳으로, "ko"면 알파벳을 한글로 */
+  ime?: "ko" | "en";
+};
 const TRAVELER_FIELDS: DetailField[] = [
-  { key: "nameKo", label: "한글이름" },
-  { key: "lastNameEn", label: "영문 성", upper: true },
-  { key: "firstNameEn", label: "영문 이름", upper: true },
+  { key: "nameKo", label: "한글이름", ime: "ko" },
+  { key: "lastNameEn", label: "영문 성", upper: true, ime: "en" },
+  { key: "firstNameEn", label: "영문 이름", upper: true, ime: "en" },
   { key: "rrnFront", label: "주민번호 앞", maxLength: 6 },
   { key: "rrnBack", label: "주민번호 뒤", type: "password", maxLength: 7 },
   { key: "gender", label: "성별", type: "gender" },
   { key: "birth", label: "생년월일", type: "date" },
-  { key: "passportNumber", label: "여권번호", upper: true },
+  { key: "passportNumber", label: "여권번호", upper: true, ime: "en" },
   { key: "passportIssue", label: "여권 발급일", type: "date" },
   { key: "passportExpiry", label: "여권 만료일", type: "date" },
 ];
@@ -59,11 +69,13 @@ export default function ReservePage() {
   const id = String(params.id);
   const sp = useSearchParams();
   const { voyages, loading } = useVoyages();
-  const v = voyages.find((x) => x.id === id);
+  // 임시저장·홈페이지 숨김 상품은 예약 신청도 막는다
+  const v = voyages.find((x) => x.id === id && isPublicVoyage(x));
 
   const [step, setStep] = useState(0);
   const [room, setRoom] = useState("내측");
-  const [adult, setAdult] = useState(Number(sp.get("adult")) || 2);
+  // 상세페이지에서 넘어온 인원(?adult=)이 있으면 그 값, 직접 들어온 경우 기본 1명
+  const [adult, setAdult] = useState(Number(sp.get("adult")) || 1);
   const [child, setChild] = useState(Number(sp.get("child")) || 0);
   const count = Math.max(1, adult + child);
 
@@ -212,6 +224,22 @@ export default function ReservePage() {
             <div className="rounded-[16px] border border-[#0B2A4A1a] bg-white p-16 text-center text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-400">
               {loading ? "불러오는 중…" : "상품을 찾을 수 없습니다."}
             </div>
+          ) : v.statusManual === "마감" ? (
+            // 관리자가 '마감'으로 지정한 상품은 주소를 직접 입력해 들어와도 신청을 받지 않는다
+            <div className="rounded-[16px] border border-[#0B2A4A1a] bg-white p-16 text-center">
+              <p className="text-[min(1.2vw,23px)] max-[991px]:text-[min(3.7vw,22px)] max-[501px]:text-[4.4vw] font-bold text-[#0B2A4A]">
+                예약이 마감된 상품입니다
+              </p>
+              <p className="mt-3 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] text-slate-500">
+                다른 출발일을 확인하시거나 상담 문의를 남겨주세요.
+              </p>
+              <Link
+                href={`/cruises/${id}`}
+                className="mt-6 inline-block rounded-none bg-[#1E4D8B] px-8 py-3 text-[min(0.9625vw,18.48px)] max-[991px]:text-[min(2.9979vw,17.9874px)] max-[501px]:text-[3.6407vw] font-semibold text-white transition hover:brightness-110"
+              >
+                상품 상세로 돌아가기
+              </Link>
+            </div>
           ) : (
             <div className="rounded-[16px] border border-[#0B2A4A1a] bg-white px-[2em] py-[3em] max-[991px]:px-[1em] max-[991px]:py-[1.5em]">
               {/* 스텝 인디케이터 */}
@@ -302,13 +330,20 @@ export default function ReservePage() {
                   <Section title="예약자 정보">
                     <div className="flex flex-col gap-[1.4em]">
                       <Field label="이름" required>
-                        <input className={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" />
+                        <SmartInput className={inp} value={name} onChange={setName} ime="ko" placeholder="홍길동" />
                       </Field>
                       <Field label="연락처" required>
-                        <input className={inp} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" />
+                        <input
+                          className={inp}
+                          inputMode="numeric"
+                          maxLength={13}
+                          value={phone}
+                          onChange={(e) => setPhone(phoneMask(e.target.value))}
+                          placeholder="010-0000-0000"
+                        />
                       </Field>
                       <Field label="이메일" required>
-                        <input className={inp} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@email.com" />
+                        <SmartInput className={inp} value={email} onChange={setEmail} ime="en" type="email" placeholder="example@email.com" />
                       </Field>
                     </div>
                   </Section>
@@ -479,15 +514,33 @@ function DetailGrid({ fields, value, onField }: { fields: DetailField[]; value: 
               placeholder="YYYY-MM-DD"
               maxLength={10}
             />
-          ) : (
+          ) : f.key === "rrnBack" ? (
             <input
+              type="password"
+              className={inp}
+              maxLength={7}
+              inputMode="numeric"
+              value={value[f.key] ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                onField(f.key, v);
+                // 뒷자리 첫 숫자로 성별 자동 지정 (1·3·5·7·9 남 / 2·4·6·8·0 여)
+                const g = genderFromRrn(v);
+                if (g) onField("gender", g);
+              }}
+              placeholder={f.label}
+            />
+          ) : (
+            <SmartInput
               type={f.type === "password" ? "password" : "text"}
               className={inp}
               style={f.upper ? { textTransform: "uppercase" } : undefined}
               maxLength={f.maxLength}
               inputMode={f.maxLength ? "numeric" : undefined}
               value={value[f.key] ?? ""}
-              onChange={(e) => onField(f.key, f.upper ? e.target.value.toUpperCase() : e.target.value)}
+              onChange={(v) => onField(f.key, v)}
+              ime={f.ime}
+              upper={f.upper}
               placeholder={f.label}
             />
           )}

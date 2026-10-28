@@ -1,7 +1,9 @@
 "use client";
 
+import { activeMembers, membersOf as storedMembers, compareRooming, reservationTotals } from "@/lib/reservation-state";
+import { remainingSeats } from "@/lib/voyages";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useVoyages } from "@/lib/useVoyages";
 import { useReservations } from "@/lib/useReservations";
 import {
@@ -11,24 +13,40 @@ import {
   updateReservation,
   addReservation,
   deleteReservation,
+  setReservationCancelled,
 } from "@/lib/reservations";
 import { reservationsToCsv, downloadCsv } from "@/lib/csv";
 import { buildContractMessage, sendContractSms } from "@/lib/sms";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Reservation, Passenger } from "@/lib/types";
 import PassengerEditor from "@/components/admin/PassengerEditor";
+import VoyageChangeDialog from "@/components/admin/VoyageChangeDialog";
 
 export default function VoyagePassengersPage() {
   const params = useParams();
   const id = String(params.id);
+  const searchParams = useSearchParams();
+  const resvParam = searchParams.get("resv"); // 대시보드 알림에서 넘어온 예약 id
   const { voyages, loading } = useVoyages();
-  const { reservations, loading: rLoading } = useReservations();
+  const { reservations, allReservations, loading: rLoading } = useReservations();
+  const [showCancelled, setShowCancelled] = useState(false);
   const [editing, setEditing] = useState<Reservation | null>(null);
+  const openedFromAlert = useRef(false);
+
+  // 알림(여권 미제출·만료)에서 들어오면 해당 승객의 정보 입력창을 바로 연다. 최초 1회만.
+  useEffect(() => {
+    if (!resvParam || openedFromAlert.current) return;
+    const target = reservations.find((r) => r.id === resvParam);
+    if (!target) return;
+    openedFromAlert.current = true;
+    setEditing(target);
+  }, [resvParam, reservations]);
   const [sendingId, setSendingId] = useState<string | null>(null); // 계약서 발송 중인 예약 id
   const [selected, setSelected] = useState<Set<string>>(new Set()); // 계약서 발송 대상 체크
   const [creating, setCreating] = useState(false); // 신규 승객 추가(편집창) 여부 — 저장 시에만 생성
   const [statusOpen, setStatusOpen] = useState(false); // 예약현황 팝업
   const [roomingOpen, setRoomingOpen] = useState(false); // 루밍리스트 팝업
+  const [moving, setMoving] = useState<Reservation | null>(null); // 일정 변경 대상 예약
   const v = voyages.find((x) => x.id === id);
 
   if (loading || rLoading) {
@@ -50,12 +68,13 @@ export default function VoyagePassengersPage() {
     .filter((r) => r.voyageId === v.id)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const agg = aggregateForVoyage(reservations, v.id);
+  const totals = reservationTotals(v, agg.pax);
 
   // 예약(팀)의 일행 전원을 개별 행으로 펼치기 — passengers 없으면 대표 1명으로 구성
-  const membersOf = (r: Reservation): Passenger[] =>
-    r.passengers?.length
-      ? r.passengers
-      : [{ id: r.id, nameKo: r.name, phone: r.phone, roomType: r.room, passportNumber: r.passportNumber, passportExpiry: r.passportExpiry }];
+  //  · passengers 가 없는 옛 예약은 대표 1명 + (예약인원-1)명의 빈 행으로 채운다.
+  //    그래야 "4명 예약"인데 미제출이 1~2명으로만 잡히던 어긋남이 없어진다.
+  const membersOf = activeMembers;
+  const cancelled = allReservations.filter(r => r.voyageId === v.id && (r.status === "cancelled" || storedMembers(r).some(p => p.status === "cancelled")));
 
   // 요약 지표 — 팀이 아니라 총 인원(일행 포함) 기준으로 집계
   const allMembers = passengers.flatMap((r) => membersOf(r).map((m) => ({ m, r })));
@@ -78,12 +97,15 @@ export default function VoyagePassengersPage() {
   };
   const ageGroup = (age: number | null) => (age == null ? "-" : age >= 12 ? "성인" : age >= 2 ? "아동" : "유아");
 
-  // 루밍리스트 — 객실타입별 그룹(일행 전원)
+  // 루밍리스트 — 객실타입별 그룹(일행 전원). 그룹 안에서는 루밍(A·B·Single…)끼리 모아 정렬
   const ROOM_ORDER = ["내측", "오션뷰", "발코니", "스위트"];
   const roomOf = (m: Passenger, r: Reservation) => m.roomType || r.room || "미지정";
   const roomingGroups = Array.from(new Set(allMembers.map(({ m, r }) => roomOf(m, r))))
     .sort((a, b) => (ROOM_ORDER.indexOf(a) + 1 || 99) - (ROOM_ORDER.indexOf(b) + 1 || 99))
-    .map((room) => ({ room, members: allMembers.filter(({ m, r }) => roomOf(m, r) === room) }));
+    .map((room) => ({
+      room,
+      members: allMembers.filter(({ m, r }) => roomOf(m, r) === room).sort(compareRooming),
+    }));
 
   const bookingRows = [...passengers]
     .sort((a, b) => (a.code ?? "").localeCompare(b.code ?? "") || a.createdAt.localeCompare(b.createdAt))
@@ -109,7 +131,7 @@ export default function VoyagePassengersPage() {
         @media print{body{padding:0;}}
       </style></head><body>
         <h1>예약현황</h1>
-        <div class="meta">상품코드 ${esc(v.code ?? "-")} · ${esc(v.title)} · 총 ${totalPax}명(${passengers.length}팀) · 성인 ${adultCnt}명</div>
+        <div class="meta">상품코드 ${esc(v.code ?? "-")} · ${esc(v.title)} · 총 예약 ${totals.total}명 · 명부 ${totalPax}명(${passengers.length}팀) · 오프라인 추가 ${totals.offline}명 · 성인 ${adultCnt}명</div>
         <table><thead><tr><th>예약코드</th><th>순번</th><th>성명</th><th>영문성명</th><th>성별</th><th>나이구분</th><th>객실</th><th>루밍</th><th>여권</th><th>계약금</th></tr></thead><tbody>${rows}</tbody></table>
       </body></html>`;
     const w = window.open("", "_blank", "width=1000,height=720");
@@ -129,11 +151,11 @@ export default function VoyagePassengersPage() {
         const rows = members
           .map(
             ({ m, r }, i) =>
-              `<tr><td>${i + 1}</td><td>${esc(m.nameKo || r.name)}</td><td>${esc(m.phone || r.phone || "-")}</td><td>${esc(m.rooming || "-")}</td><td>${esc(r.code ?? "-")}</td><td>${esc(m.passportNumber ?? "-")}</td><td>${esc(m.passportExpiry ?? "-")}</td></tr>`,
+              `${i > 0 && members[i-1].r.id !== r.id ? '</tbody><tbody class="team">' : ""}<tr style="${i === 0 || members[i-1].r.id !== r.id ? "border-top:3px solid #94a3b8" : ""}"><td>${i + 1}</td><td>${esc(m.nameKo || r.name)}</td><td>${esc(m.phone || r.phone || "-")}</td><td>${esc(m.rooming || "-")}</td><td>${esc(r.code ?? "-")}</td><td>${esc(m.passportNumber ?? "-")}</td><td>${esc(m.passportExpiry ?? "-")}</td></tr>`,
           )
           .join("");
         return `<h2>${esc(room)} <span class="cnt">(${members.length}명)</span></h2>
-          <table><thead><tr><th>No</th><th>이름</th><th>연락처</th><th>루밍</th><th>예약코드</th><th>여권번호</th><th>여권 만료일</th></tr></thead><tbody>${rows}</tbody></table>`;
+          <table><thead><tr><th>No</th><th>이름</th><th>연락처</th><th>루밍</th><th>예약코드</th><th>여권번호</th><th>여권 만료일</th></tr></thead><tbody class="team">${rows}</tbody></table>`;
       })
       .join("");
 
@@ -147,10 +169,11 @@ export default function VoyagePassengersPage() {
         table{width:100%;border-collapse:collapse;font-size:13px;}
         th,td{border:1px solid #e2e8f0;padding:7px 10px;text-align:left;}
         th{background:#f1f5f9;color:#475569;font-weight:600;}
-        @media print{body{padding:0;}}
+        @media print{body{padding:0;} h2{break-after:avoid;} thead{display:table-header-group;} tbody.team{break-inside:avoid;} tr{break-inside:avoid;}}
       </style></head><body>
         <h1>루밍리스트</h1>
-        <div class="meta">${esc(v.title)} · 출항 ${esc(v.departDate)} ~ 귀항 ${esc(v.arriveDate)} · ${esc(v.shipName)} · 총 ${totalPax}명(${passengers.length}팀)</div>
+        <div class="meta">${esc(v.title)} · 출항 ${esc(v.departDate)} ~ 귀항 ${esc(v.arriveDate)} · ${esc(v.shipName)} · 총 예약 ${totals.total}명 · 명부 ${totalPax}명(${passengers.length}팀) · 오프라인 추가 ${totals.offline}명</div>
+        <p class="meta">객실타입 → 예약팀 → 팀 내 루밍 순. 서로 다른 팀의 A/B는 별도 객실입니다.</p>
         ${sections}
       </body></html>`;
     const w = window.open("", "_blank", "width=900,height=700");
@@ -221,13 +244,14 @@ export default function VoyagePassengersPage() {
       voyageId: v.id, voyageTitle: v.title, departDate: v.departDate, arriveDate: v.arriveDate,
       name: first?.nameKo || "신규 승객", phone: first?.phone || "", room: first?.roomType || "내측",
       headcount: passengers.length, contractPaid: false, passengers,
+      createdByAdmin: true,
     });
   };
 
   // 승객(예약) 삭제
   const removeReservation = async (p: Reservation) => {
-    if (!confirm(`${p.name || "이 승객"} (예약코드 ${p.code ?? "-"}) 예약을 삭제할까요?\n일행 ${p.passengers?.length ?? p.headcount ?? 1}명이 함께 삭제됩니다.`)) return;
-    await deleteReservation(p.id);
+    if (!confirm(`${p.name || "이 승객"} (예약코드 ${p.code ?? "-"}) 예약을 취소할까요?\n일행 ${membersOf(p).length}명이 함께 취소되며 기록은 보존됩니다.`)) return;
+    try { await deleteReservation(p.id); } catch { alert("취소 저장에 실패했습니다. 다시 시도해 주세요."); return; }
     setSelected((s) => { const n = new Set(s); n.delete(p.id); return n; });
   };
 
@@ -242,6 +266,9 @@ export default function VoyagePassengersPage() {
         {v.published === false && (
           <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[0.6em] font-semibold text-amber-700">임시저장</span>
         )}
+        {v.hidden && (
+          <span className="rounded-md bg-slate-200 px-2 py-0.5 text-[0.6em] font-semibold text-slate-600">홈페이지 숨김</span>
+        )}
       </h1>
       <p className="mt-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-semibold text-slate-400">
         상품코드 <span className="text-[#1E4D8B]">{v.code ?? "미지정"}</span>
@@ -250,9 +277,11 @@ export default function VoyagePassengersPage() {
         <span>📅 출항: {v.departDate}</span>
         <span>📅 귀항: {v.arriveDate}</span>
         <span>🚢 {v.shipName}</span>
-        <span>👥 {agg.pax}명 예약 ({agg.reservedCount}팀)</span>
+        <span>👥 총 {totals.total}명 예약 (명부 {agg.pax}명 / {agg.reservedCount}팀 + 오프라인 {totals.offline}명)</span>
       </div>
 
+      <p className="mt-3 text-sm text-slate-500">명부 {totals.registered}명 ({agg.reservedCount}팀) + 오프라인 {totals.offline}명 = 총 {totals.total}명 · 잔여 {remainingSeats(v, agg.pax)}명 / 정원 {v.capacity ?? 30}명</p>
+      <p className="mt-2 text-xs text-slate-500">명부는 홈페이지·관리자 등록을 포함합니다. 아래 여권·계약금 통계는 명부 {totalPax}명 기준입니다. 오프라인 추가인원의 제출 상태는 미집계입니다.</p>
       <div className="mt-5 grid grid-cols-3 gap-3">
         <Summary label="여권 완료" value={`${passportDonePax}/${totalPax}`} color="emerald" />
         <Summary label="미제출" value={`${passportPendingPax}명`} color="orange" />
@@ -325,6 +354,7 @@ export default function VoyagePassengersPage() {
                     <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[#1E4D8B]" aria-label="전체 선택" />
                   </th>
                   <th className="px-2 py-2 text-left font-medium">No</th>
+                  <th className="px-2 py-2 text-left font-medium">등록일</th>
                   <th className="px-2 py-2 text-left font-medium">이름</th>
                   <th className="px-2 py-2 text-left font-medium">연락처</th>
                   <th className="px-2 py-2 text-left font-medium">객실</th>
@@ -336,7 +366,7 @@ export default function VoyagePassengersPage() {
                   <th className="px-2 py-2 text-left font-medium">관리</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="[&_td]:align-middle">
                 {(() => {
                   let no = 0;
                   return passengers.map((p) => {
@@ -351,15 +381,20 @@ export default function VoyagePassengersPage() {
                       return (
                         <tr key={`${p.id}-${mi}`} className={`${rowBg} ${isLast ? "border-b-2 border-slate-100" : "border-b border-slate-50"}`}>
                           {mi === 0 && (
-                            <td rowSpan={members.length} className="px-2 py-2 text-center align-top">
+                            <td rowSpan={members.length} className="px-2 py-2 text-center">
                               <input type="checkbox" checked={sel} onChange={() => toggle(p.id)} className="accent-[#1E4D8B]" aria-label={`${p.name} 팀 선택`} />
                             </td>
                           )}
                           <td className="px-2 py-2 text-slate-400">{no}</td>
+                          {mi === 0 && (
+                            <td rowSpan={members.length} className="whitespace-nowrap px-2 py-2 text-slate-400">
+                              {p.createdAt?.slice(0, 10) || "—"}
+                            </td>
+                          )}
                           <td className="whitespace-nowrap px-2 py-2 font-medium text-slate-700">
                             {m.nameKo || "—"}
-                            <span className={`ml-1.5 rounded px-1 py-0.5 text-[0.7em] font-semibold ${mi === 0 ? "bg-navy/10 text-navy" : "bg-slate-100 text-slate-400"}`}>
-                              {mi === 0 ? "대표" : "일행"}
+                            <span className={`ml-1.5 inline-block rounded px-1 py-0.5 align-middle text-[0.7em] font-semibold ${mi === 0 ? "bg-navy/10 text-navy" : "bg-slate-100 text-slate-400"}`}>
+                              {m.id === storedMembers(p)[0]?.id ? "대표" : "일행"}
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-2 py-2 text-slate-500">{m.phone || "—"}</td>
@@ -379,13 +414,13 @@ export default function VoyagePassengersPage() {
                           </td>
                           {mi === 0 && (
                             <>
-                              <td rowSpan={members.length} className="px-2 py-2 align-top">
+                              <td rowSpan={members.length} className="px-2 py-2">
                                 <Tag ok={p.contractPaid} okText="완료" noText="대기" />
                               </td>
-                              <td rowSpan={members.length} className="whitespace-nowrap px-2 py-2 align-top">
+                              <td rowSpan={members.length} className="whitespace-nowrap px-2 py-2">
                                 <span className="font-mono text-[1.0714em] text-slate-500">{p.code ?? "—"}</span>
                               </td>
-                              <td rowSpan={members.length} className="px-2 py-2 align-top">
+                              <td rowSpan={members.length} className="px-2 py-2">
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     onClick={() => sendOne(p)}
@@ -403,7 +438,7 @@ export default function VoyagePassengersPage() {
                                   )}
                                 </div>
                               </td>
-                              <td rowSpan={members.length} className="px-2 py-2 align-top">
+                              <td rowSpan={members.length} className="px-2 py-2">
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={() => setEditing(p)}
@@ -412,9 +447,16 @@ export default function VoyagePassengersPage() {
                                     승객정보
                                   </button>
                                   <button
+                                    onClick={() => setMoving(p)}
+                                    className="whitespace-nowrap rounded-md border border-slate-300 px-2.5 py-1 text-[1.0714em] font-semibold text-slate-600 hover:bg-slate-50"
+                                    title="다른 출발일·다른 상품으로 변경"
+                                  >
+                                    일정변경
+                                  </button>
+                                  <button
                                     onClick={() => removeReservation(p)}
                                     className="rounded-md border border-red-200 px-2 py-1 text-[1.0714em] font-semibold text-red-500 hover:bg-red-50"
-                                    title="예약 삭제"
+                                    title="예약 취소 (기록 보존)"
                                   >
                                     🗑
                                   </button>
@@ -433,11 +475,36 @@ export default function VoyagePassengersPage() {
         )}
       </div>
 
+      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4">
+        <button className="font-semibold text-slate-700" onClick={() => setShowCancelled(!showCancelled)}>취소자 목록 ({cancelled.length}팀) {showCancelled ? "접기" : "보기"}</button>
+        {showCancelled && <div className="mt-3 space-y-3 text-sm">
+          <p className="text-slate-500">취소 기록은 보존됩니다. 과거 영구 삭제된 기록은 포함되지 않습니다. 팀 복구 시 개별 취소 승객은 그대로 유지됩니다.</p>
+          {cancelled.map(r => <div key={r.id} className="rounded-lg border border-slate-200 p-3">
+            <div className="flex flex-wrap items-center gap-3"><b>{r.code || r.id}</b><span>{r.status === "cancelled" ? "팀 전체 취소" : "일부/전체 승객 취소"}</span>
+              {r.status === "cancelled" ? <button className="text-brand underline" onClick={async () => { if (!confirm("팀을 복구할까요? 복구 후 정원을 확인해 주세요.")) return; try { await setReservationCancelled(r.id, false); } catch { alert("복구에 실패했습니다."); } }}>팀 복구</button> : <button className="text-brand underline" onClick={() => setEditing(r)}>승객정보 / 개별 복구</button>}
+            </div>
+            <details className="mt-2 text-xs text-slate-500"><summary>팀 취소·복구 이력</summary>{(r.cancellationHistory ?? []).map((e, i) => <p key={i}>{e.action === "cancel" ? "취소" : "복구"} · {new Date(e.at).toLocaleString("ko-KR")}</p>)}</details>
+            {storedMembers(r).filter(p => r.status === "cancelled" || p.status === "cancelled").map(p => <p key={p.id} className="mt-1">{p.nameKo || "미입력 승객"} · 취소일시 {((r.status === "cancelled" ? r.cancelledAt : p.cancelledAt) ? new Date((r.status === "cancelled" ? r.cancelledAt : p.cancelledAt)!).toLocaleString("ko-KR") : "기록 없음")}</p>)}
+          </div>)}
+          {cancelled.length === 0 && <p>취소 기록이 없습니다.</p>}
+        </div>}
+      </section>
+
       {editing && (
         <PassengerEditor
           reservation={editing}
           onClose={() => { setEditing(null); setCreating(false); }}
           onSave={creating ? createReservation : undefined}
+        />
+      )}
+
+      {moving && (
+        <VoyageChangeDialog
+          reservation={moving}
+          voyage={v}
+          voyages={voyages}
+          reservations={reservations}
+          onClose={() => setMoving(null)}
         />
       )}
 
@@ -457,7 +524,7 @@ export default function VoyagePassengersPage() {
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 border-b border-slate-100 px-5 py-4 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] max-[501px]:grid-cols-1">
               <p className="flex gap-2"><span className="w-20 shrink-0 text-slate-400">상품코드</span><span className="font-semibold text-navy">{v.code ?? "미지정"}</span></p>
               <p className="flex gap-2"><span className="w-20 shrink-0 text-slate-400">상품명</span><span className="min-w-0 truncate font-medium text-slate-700">{v.title}</span></p>
-              <p className="flex gap-2"><span className="w-20 shrink-0 text-slate-400">예약인원</span><span className="font-medium text-slate-700">총 {totalPax}명 ({passengers.length}팀) · 성인 {adultCnt}명</span></p>
+              <p className="flex gap-2"><span className="w-20 shrink-0 text-slate-400">예약인원</span><span className="font-medium text-slate-700">총 예약 {totals.total}명 · 명부 {totalPax}명 ({passengers.length}팀) · 오프라인 추가 {totals.offline}명 · 명부 성인 {adultCnt}명</span></p>
               <p className="flex gap-2"><span className="w-20 shrink-0 text-slate-400">여권/계약금</span><span className="font-medium text-slate-700">여권 {passportDonePax}/{totalPax} · 계약금 {contractPaidPax}/{totalPax}</span></p>
             </div>
 
@@ -478,7 +545,7 @@ export default function VoyagePassengersPage() {
                     <th className="px-3 py-2 text-center font-medium">계약금</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="[&_td]:align-middle">
                   {bookingRows.map((x, idx) => {
                     const first = idx === 0 || bookingRows[idx - 1].r.id !== x.r.id;
                     return (
@@ -522,9 +589,10 @@ export default function VoyagePassengersPage() {
             </div>
 
             <div className="border-b border-slate-100 px-5 py-3 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-500">
-              {v.title} · 출항 {v.departDate} ~ 귀항 {v.arriveDate} · {v.shipName} · 총 {totalPax}명({passengers.length}팀)
+              {v.title} · 출항 {v.departDate} ~ 귀항 {v.arriveDate} · {v.shipName} · 총 예약 {totals.total}명 · 명부 {totalPax}명({passengers.length}팀) · 오프라인 추가 {totals.offline}명
             </div>
 
+            <p className="px-5 pt-3 text-xs text-slate-500">객실타입 → 예약팀 → 팀 내 루밍 순. 서로 다른 팀의 A/B는 별도 객실입니다.</p>
             <div className="max-h-[60vh] space-y-5 overflow-auto px-5 py-4">
               {roomingGroups.length === 0 ? (
                 <p className="py-10 text-center text-[min(0.847vw,16.2624px)] max-[991px]:text-[min(2.6381vw,15.8286px)] max-[501px]:text-[3.2039vw] text-slate-400">예약 인원이 없습니다.</p>
@@ -547,9 +615,9 @@ export default function VoyagePassengersPage() {
                             <th className="px-3 py-2 text-left font-medium">여권 만료일</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="[&_td]:align-middle">
                           {members.map(({ m, r }, i) => (
-                            <tr key={`${r.id}-${i}`} className="border-b border-slate-50 last:border-0">
+                            <tr key={`${r.id}-${i}`} style={i === 0 || members[i-1].r.id !== r.id ? { borderTop: "3px solid #94a3b8" } : undefined} className={`border-b border-slate-50 last:border-0 ${i === 0 || members[i-1].r.id !== r.id ? "border-t-2 border-t-slate-300" : ""}`}>
                               <td className="px-3 py-2 text-center text-slate-400">{i + 1}</td>
                               <td className="px-3 py-2 font-medium text-slate-700">{m.nameKo || r.name}</td>
                               <td className="px-3 py-2 text-slate-500">{m.phone || r.phone || "—"}</td>
@@ -594,7 +662,7 @@ function Summary({ label, value, color }: { label: string; value: string; color:
 
 function Tag({ ok, okText, noText }: { ok: boolean; okText: string; noText: string }) {
   return (
-    <span className={`rounded-md px-2 py-0.5 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-medium ${ok ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}`}>
+    <span className={`inline-block rounded-md px-2 py-0.5 align-middle text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-medium ${ok ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}`}>
       {ok ? okText : noText}
     </span>
   );

@@ -2,6 +2,8 @@
 
 import { useVoyages } from "@/lib/useVoyages";
 import { useReservations } from "@/lib/useReservations";
+import { reservationTotals } from "@/lib/reservation-state";
+import { liveStatus } from "@/lib/voyages";
 import { aggregateForVoyage } from "@/lib/reservations";
 
 const statusBadge: Record<string, string> = {
@@ -14,7 +16,7 @@ const statusBadge: Record<string, string> = {
 export default function DashboardUpcoming() {
   const { voyages, loading } = useVoyages();
   const { reservations } = useReservations();
-  const upcoming = voyages.filter((v) => v.status !== "마감").slice(0, 3);
+  const upcoming = voyages.filter((v) => liveStatus(v, aggregateForVoyage(reservations, v.id).pax) !== "마감").slice(0, 3);
 
   if (loading) {
     return <p className="py-6 text-center text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-400">불러오는 중…</p>;
@@ -25,7 +27,11 @@ export default function DashboardUpcoming() {
 
   return (
     <ul className="flex flex-col gap-3">
-      {upcoming.map((v) => (
+      {upcoming.map((v) => {
+        const agg = aggregateForVoyage(reservations, v.id);
+        const totals = reservationTotals(v, agg.pax);
+        const currentStatus = liveStatus(v, agg.pax);
+        return (
         <li
           key={v.id}
           className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
@@ -44,20 +50,20 @@ export default function DashboardUpcoming() {
                 {v.departDate}
                 <span className="mx-0.5">·</span>
                 <img src="/icons/admin/user.png" alt="" className="h-3.5 w-3.5 object-contain" />
-                {aggregateForVoyage(reservations, v.id).reservedCount}명 예약
+                {totals.total}명 예약 (명부 {totals.registered}명 / {agg.reservedCount}팀 + 오프라인 {totals.offline}명)
                 {/* eslint-enable @next/next/no-img-element */}
               </p>
             </div>
           </div>
           <span
             className={`rounded-full px-2.5 py-1 text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] font-medium ${
-              statusBadge[v.status] ?? "bg-slate-100 text-slate-600"
+              statusBadge[currentStatus] ?? "bg-slate-100 text-slate-600"
             }`}
           >
-            {v.status}
+            {currentStatus}
           </span>
         </li>
-      ))}
+      ); })}
     </ul>
   );
 }

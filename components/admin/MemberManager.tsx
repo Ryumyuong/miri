@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getMembers, deleteMember, type Member } from "@/lib/members";
+import { getMembers, deleteMember, setMemberAdmin, type Member } from "@/lib/members";
 import { useReservations } from "@/lib/useReservations";
 import type { Reservation } from "@/lib/types";
 
@@ -26,7 +26,27 @@ export default function MemberManager() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Member | null>(null);
+  const [savingAdmin, setSavingAdmin] = useState<string | null>(null); // 권한 저장 중인 회원 id
   const { reservations } = useReservations();
+
+  // 관리자 권한 켜기/끄기 — 켠 계정으로 로그인하면 관리자 화면에 들어갈 수 있다
+  const toggleAdmin = async (m: Member) => {
+    const next = !m.isAdmin;
+    const msg = next
+      ? `${m.name}(${m.id}) 님에게 관리자 권한을 줄까요?\n이 계정으로 로그인하면 관리자 화면 전체를 볼 수 있습니다.`
+      : `${m.name}(${m.id}) 님의 관리자 권한을 해제할까요?`;
+    if (!confirm(msg)) return;
+    setSavingAdmin(m.id);
+    try {
+      await setMemberAdmin(m.id, next);
+      setMembers((l) => l.map((x) => (x.id === m.id ? { ...x, isAdmin: next } : x)));
+      setSelected((s) => (s && s.id === m.id ? { ...s, isAdmin: next } : s));
+    } catch (e) {
+      alert("권한 변경 실패: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setSavingAdmin(null);
+    }
+  };
 
   // 회원의 예약 이력 — 연락처(우선) 또는 이름으로 매칭 (일행 포함)
   const memberReservations = (m: Member): Reservation[] => {
@@ -101,6 +121,7 @@ export default function MemberManager() {
                 <th className="whitespace-nowrap px-4 py-3 text-center font-semibold">가입일</th>
                 <th className="whitespace-nowrap px-4 py-3 text-center font-semibold">예약</th>
                 <th className="px-4 py-3 text-center font-semibold">여권</th>
+                <th className="whitespace-nowrap px-4 py-3 text-center font-semibold">관리자 권한</th>
                 <th className="px-4 py-3 text-center font-semibold">관리</th>
               </tr>
             </thead>
@@ -128,6 +149,21 @@ export default function MemberManager() {
                     ) : (
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[0.85em] font-semibold text-slate-400">미등록</span>
                     )}
+                  </td>
+                  {/* 관리자 권한 — 켜면 그 계정으로 로그인 시 관리자 화면에 들어갈 수 있다 */}
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleAdmin(m)}
+                      disabled={savingAdmin === m.id}
+                      className={`rounded-md px-3 py-1.5 text-[0.85em] font-semibold transition disabled:opacity-50 ${
+                        m.isAdmin
+                          ? "bg-[#1E4D8B] text-white hover:brightness-110"
+                          : "border border-slate-300 text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {savingAdmin === m.id ? "저장 중…" : m.isAdmin ? "✓ 관리자" : "권한 없음"}
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button

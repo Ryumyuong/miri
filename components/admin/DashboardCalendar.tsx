@@ -1,4 +1,6 @@
 "use client";
+import { aggregateForVoyage } from "@/lib/reservations";
+import { paxOf, reservationTotals } from "@/lib/reservation-state";
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -75,13 +77,13 @@ export default function DashboardCalendar() {
   const departCount = events.filter((e) => e.type === "출발").length;
   const confirmedCount = voyages.filter((v) => v.departDate?.startsWith(monthKey) && v.status === "출발 확정").length;
   // 이번 달 출발 예약들의 총 인원
-  const peopleCount = reservations
-    .filter((r) => r.departDate?.startsWith(monthKey))
-    .reduce((s, r) => s + (r.headcount ?? 0), 0);
+  const peopleCount = voyages
+    .filter(v => v.departDate?.startsWith(monthKey))
+    .reduce((sum, v) => sum + reservationTotals(v, aggregateForVoyage(reservations, v.id).pax).total, 0);
   // 이번 달 신규 예약 (신청 생성일 기준) — 건수 + 인원
   const newResv = reservations.filter((r) => r.createdAt?.slice(0, 7) === monthKey);
   const newBookingCount = newResv.length;
-  const newPeople = newResv.reduce((s, r) => s + (r.headcount ?? r.passengers?.length ?? 1), 0);
+  const newPeople = newResv.reduce((s, r) => s + paxOf(r), 0);
 
   // 월 넘김 정규화
   const norm = (y: number, m: number) => {
@@ -107,7 +109,7 @@ export default function DashboardCalendar() {
         <Stat icon="/icons/summary/stat-people.png" label="총 탑승 예정" value={`${peopleCount}명`} />
         <Stat
           icon="/icons/summary/stat-people.png"
-          label={`이번 달 신규예약 (${newBookingCount}건)`}
+          label={`이번 달 신규 명부예약 (${newBookingCount}건)`}
           value={`${newPeople}명`}
           onClick={newBookingCount > 0 ? () => setNewBookingOpen(true) : undefined}
         />
@@ -251,7 +253,7 @@ export default function DashboardCalendar() {
                     <span className="min-w-0">
                       <span className="flex items-center gap-2">
                         <span className="text-[min(0.9075vw,17.424px)] max-[991px]:text-[min(2.8266vw,16.9596px)] max-[501px]:text-[3.4328vw] font-bold text-slate-800">{r.name || "이름없음"}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[min(0.715vw,13.728px)] max-[991px]:text-[min(2.2271vw,13.3626px)] max-[501px]:text-[2.7046vw] font-semibold text-slate-500">일행 {r.passengers?.length ?? r.headcount ?? 1}명</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[min(0.715vw,13.728px)] max-[991px]:text-[min(2.2271vw,13.3626px)] max-[501px]:text-[2.7046vw] font-semibold text-slate-500">일행 {paxOf(r)}명</span>
                       </span>
                       <span className="mt-0.5 block break-keep text-[min(0.825vw,15.84px)] max-[991px]:text-[min(2.5695vw,15.417px)] max-[501px]:text-[3.1206vw] text-slate-500">{r.voyageTitle}</span>
                     </span>

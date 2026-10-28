@@ -1,4 +1,5 @@
 "use client";
+import { paxOf } from "@/lib/reservation-state";
 
 import { useReservations } from "@/lib/useReservations";
 import { useVoyages } from "@/lib/useVoyages";
@@ -41,7 +42,7 @@ export default function DashboardStats() {
   const bookingsPrev = reservations.filter((r) => r.createdAt.slice(0, 7) === prev).length;
   const peopleCur = reservations
     .filter((r) => r.createdAt.slice(0, 7) === cur)
-    .reduce((s, r) => s + (r.headcount ?? r.passengers?.length ?? 1), 0);
+    .reduce((s, r) => s + paxOf(r), 0);
 
   // 확정 출발 (상태 = 출발 확정)
   const confirmed = voyages.filter((v) => v.status === "출발 확정").length;
@@ -58,7 +59,7 @@ export default function DashboardStats() {
     .reduce((sum, p) => sum + p.paid, 0);
 
   const stats: { label: string; value: string; delta?: string; sub?: string }[] = [
-    { label: "이번 달 예약", value: `${bookingsCur}건`, sub: `총 ${peopleCur}명`, delta: pctDelta(bookingsCur, bookingsPrev) },
+    { label: "이번 달 명부예약", value: `${bookingsCur}건`, sub: `명부 ${peopleCur}명 · 오프라인 추가인원 제외`, delta: pctDelta(bookingsCur, bookingsPrev) },
     { label: "확정 출발", value: String(confirmed) },
     { label: "진행 중 상담", value: String(ongoing) },
     { label: "이번 달 매출", value: wonShort(revenueCur), delta: pctDelta(revenueCur, revenuePrev) },
